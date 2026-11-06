@@ -20,5 +20,14 @@ test('executable serves MCP handshake, tool listing and product lookup over clea
   assert.equal((await client.listTools()).tools.length, 3);
   const result = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.equal(result.structuredContent.price.amount, '13.99');
-  assert.equal(stderr, '');
+  await client.close();
+  const diagnostics = stderr.trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(diagnostics.length, 1);
+  const [diagnostic] = diagnostics;
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['cache_hit', 'duration_ms', 'market', 'operation', 'status']);
+  assert.equal(diagnostic.market, 'SK');
+  assert.equal(diagnostic.operation, 'product');
+  assert.equal(diagnostic.status, 'ok');
+  assert.equal(diagnostic.cache_hit, false);
+  assert.ok(Number.isFinite(diagnostic.duration_ms) && diagnostic.duration_ms >= 0);
 });

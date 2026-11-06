@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { getMarket } from './config.js';
 import type { Market } from './config.js';
+import type { RequestContext, ProductResult, AvailabilityResult, SearchResult } from './contracts.js';
+import { createRequestPolicy } from './request.js';
+import { SuperzooError } from './errors.js';
 
 const SEARCH = 'https://full-text-search.superzoo.cz/search/api';
 const CANDIDATE_LIMIT = 200;
@@ -48,10 +51,10 @@ const storesSchema = z.object({ items: z.array(z.object({
 })) });
 const link = (market: Market, alias: string) => `${market.web}/${encodeURIComponent(alias)}/`;
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-const context = (market: Market, source: string) => ({ source, market: market.country, checked_at: new Date().toISOString() });
+const context = (market: Market, source: string, checked_at: string) => ({ source, market: market.country, checked_at });
 const publicPrice = (market: Market, price: z.output<typeof priceSchema>) => price ? {
   amount: price.sellPrice ?? null,
-  currency: market.currency, context: 'public_online', variant: price.variant ?? null,
+  currency: market.currency, context: 'public_online' as const, variant: price.variant ?? null,
   original_amount: price.originalPrice ?? null,
   lowest_amount: price.calculatedLowestPrice ?? null,
   sale_percentage: price.salePercentage ?? null,
@@ -65,7 +68,6 @@ interface ClientOptions {
 }
 
 type SearchCandidate = z.output<typeof searchSchema>['items'][number] & { alias: string };
-type ProductResult = Awaited<ReturnType<SuperzooClient['getProduct']>>;
 type SearchProduct = (ProductResult & { description: string | null }) | {
   product_id: string; name: string; description: string | null; url: string;
   price: null; availability: null; detail_error: string;
@@ -73,44 +75,21 @@ type SearchProduct = (ProductResult & { description: string | null }) | {
 
 export class SuperzooClient {
   readonly market: Market;
-  private readonly fetch: typeof globalThis.fetch;
-  private readonly timeoutMs: number;
+  private readonly policy: ReturnType<typeof createRequestPolicy>;
   constructor({ country = 'SK', fetchImpl = globalThis.fetch, timeoutMs = 15_000 }: ClientOptions = {}) {
     this.market = getMarket(country);
-    this.fetch = fetchImpl;
-    this.timeoutMs = timeoutMs;
+    this.policy = createRequestPolicy({ fetchImpl, timeoutMs });
   }
 
-  private async request<T>(url: string | URL, schema: z.ZodType<T>, options: RequestInit = {}): Promise<T> {
-    try {
-      const headers = new Headers(options.headers);
-      if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-      const response = await this.fetch(url, {
-        ...options, headers,
-        signal: AbortSignal.timeout(this.timeoutMs), redirect: 'error',
-      });
-      if (!response.ok) throw new Error(`Superzoo returned HTTP ${response.status}`);
-      let data: unknown;
-      try { data = await response.json(); }
-      catch { throw new Error('Superzoo returned invalid JSON'); }
-      const parsed = schema.safeParse(data);
-      if (!parsed.success) throw new Error('Superzoo returned an unexpected response structure');
-      return parsed.data;
-    } catch (error) {
-      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-        throw new Error('Superzoo request timed out');
-      }
-      throw error;
-    }
-  }
-
-  async getProduct(input: z.input<typeof productInput>) {
+  async getProduct(input: z.input<typeof productInput>, requestContext: RequestContext = {}): Promise<ProductResult> {
     const { product_id } = productInput.parse(input);
     const source = `${this.market.web}/web-api/products/${product_id}`;
-    const data = await this.request(source, detailSchema);
-    if (data.product.id !== product_id) throw new Error('Superzoo returned a different product ID');
+    const { data, checked_at } = await this.policy.request({
+      market: this.market.country, operation: 'product', productId: product_id, url: source,
+      schema: detailSchema.refine(data => data.product.id === product_id), ...requestContext,
+    });
     return {
-      ...context(this.market, source), product_id: data.product.id, name: data.product.name,
+      ...context(this.market, source, checked_at), product_id: data.product.id, name: data.product.name,
       url: link(this.market, data.product.alias), ean: data.product.ean ?? null,
       catalogue_number: data.product.catalogueNumber ?? null,
       brand: data.product.brand?.name ?? null, can_buy: data.product.canBuy ?? null,
@@ -119,7 +98,7 @@ export class SuperzooClient {
     };
   }
 
-  async searchProducts(input: z.input<typeof searchInput>) {
+  async searchProducts(input: z.input<typeof searchInput>, requestContext: RequestContext = {}): Promise<SearchResult> {
     const { query, limit } = searchInput.parse(input);
     const url = new URL(`${SEARCH}/mutations/superzoo_${this.market.country.toLowerCase()}/languages/${this.market.language}/search`);
     url.search = new URLSearchParams({
@@ -127,7 +106,9 @@ export class SuperzooClient {
       'f_must_not[0]': 'productSaleForbidden:true',
       ...(this.market.priceLevel ? { 'f_must_not[1]': `disallowedPriceLevels:${this.market.priceLevel}` } : {}),
     }).toString();
-    const data = await this.request(url, searchSchema);
+    const { data, checked_at } = await this.policy.request({
+      market: this.market.country, operation: 'search', url, schema: searchSchema, ...requestContext,
+    });
     const seen = new Set();
     const candidates = data.items.filter((item): item is SearchCandidate => {
       if (item.type !== 'productCatalogue.product' || !idSchema.safeParse(item.id).success || !item.alias) return false;
@@ -146,16 +127,23 @@ export class SuperzooClient {
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
       while (next < candidates.length) {
+        if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
         const index = next++;
         const item = candidates[index]!;
         const base = { product_id: item.id, name: item.title, description: item.annotation ?? null,
           url: link(this.market, item.alias), price: null, availability: null };
-        try { products[index] = { ...base, ...await this.getProduct({ product_id: item.id }) }; }
-        catch (error) { products[index] = { ...base, detail_error: error instanceof Error ? error.message : 'Superzoo request failed' }; }
+        try { products[index] = { ...base, ...await this.getProduct({ product_id: item.id }, requestContext) }; }
+        catch (error) {
+          if (requestContext.signal?.aborted || (error instanceof SuperzooError && error.code === 'cancelled')) {
+            throw new SuperzooError('cancelled', 'Superzoo request cancelled');
+          }
+          products[index] = { ...base, detail_error: error instanceof Error ? error.message : 'Superzoo request failed' };
+        }
       }
     }));
+    if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
     return {
-      ...context(this.market, url.toString()), query, products,
+      ...context(this.market, url.toString(), checked_at), query, products,
       upstream_total_count: data.totalCount, total_count_is_product_count: false,
       candidates_checked: data.items.length,
       candidate_limit_reached: data.totalCount > data.items.length,
@@ -163,11 +151,12 @@ export class SuperzooClient {
     };
   }
 
-  async getProductAvailability(input: z.input<typeof availabilityInput>) {
+  async getProductAvailability(input: z.input<typeof availabilityInput>, requestContext: RequestContext = {}): Promise<AvailabilityResult> {
     const { product_id, city } = availabilityInput.parse(input);
     const source = `${this.market.web}/web-api/products/${product_id}/availability`;
-    const data = await this.request(source, storesSchema, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    const { data, checked_at } = await this.policy.request({
+      market: this.market.country, operation: 'availability', productId: product_id, url: source, schema: storesSchema,
+      init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, ...requestContext,
     });
     const stores = data.items.filter(store => !city || fold(`${store.name} ${store.address}`).includes(fold(city)))
       .map(store => ({
@@ -177,7 +166,7 @@ export class SuperzooClient {
         status: store.availability?.status ?? 'unknown',
         pickup_text: store.availability?.text ?? null, quantity: null,
       }));
-    return { ...context(this.market, source), product_id, city_filter: city ?? null,
+    return { ...context(this.market, source, checked_at), product_id, city_filter: city ?? null,
       total_stores: data.items.length, stores };
   }
 }

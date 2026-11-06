@@ -142,3 +142,86 @@ test('city filter matches accented names and preserves no-match results as empty
   assert.equal((await client.getProductAvailability({ product_id: '294-101115', city: 'zilina' })).stores.length, 1);
   assert.equal((await client.getProductAvailability({ product_id: '294-101115', city: 'Kosice' })).stores.length, 0);
 });
+
+test('simultaneous searches share the four-fetch client budget and duplicate detail work', async () => {
+  let active = 0;
+  let peak = 0;
+  let details = 0;
+  const client = clientWith(async url => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    active--;
+    const parsed = new URL(url);
+    if (parsed.hostname === 'full-text-search.superzoo.cz') return response({ totalCount: 8,
+      items: Array.from({ length: 8 }, (_, i) => ({ id: `item-${i}`, title: `Product ${i}`,
+        alias: `item-${i}`, type: 'productCatalogue.product' })) });
+    details++;
+    const id = parsed.pathname.split('/').at(-1);
+    return response({ ...detail, product: { ...detail.product, id } });
+  });
+  const results = await Promise.all([client.searchProducts({ query: 'one', limit: 8 }), client.searchProducts({ query: 'two', limit: 8 })]);
+  assert.equal(peak, 4);
+  assert.equal(details, 8);
+  assert.deepEqual(results[0].products.map(product => product.product_id), results[1].products.map(product => product.product_id));
+});
+
+test('availability caches raw stores before city filtering and preserves original timestamps', async () => {
+  let calls = 0;
+  const client = clientWith(async () => { calls++; return response(stores); });
+  const first = await client.getProductAvailability({ product_id: '294-101115', city: 'Bratislava' });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const all = await client.getProductAvailability({ product_id: '294-101115' });
+  assert.equal(calls, 1);
+  assert.equal(all.stores.length, 3);
+  assert.equal(first.checked_at, all.checked_at);
+});
+
+test('mismatched IDs fail validation before cache insertion', async () => {
+  let count = 0;
+  const client = clientWith(async () => response(++count === 1
+    ? { ...detail, product: { ...detail.product, id: 'different' } } : detail));
+  await assert.rejects(client.getProduct({ product_id: '294-101115' }), error => error.code === 'invalid_response');
+  assert.equal((await client.getProduct({ product_id: '294-101115' })).product_id, '294-101115');
+  assert.equal(count, 2);
+});
+
+test('search parent cancellation rejects rather than reporting partial success and stops enrichment', async () => {
+  const controller = new AbortController();
+  let started = 0;
+  const client = clientWith(async (url, { signal }) => {
+    if (String(url).includes('full-text-search')) return response({ totalCount: 8, items: Array.from({ length: 8 }, (_, i) => ({
+      id: `item-${i}`, title: 'Product', alias: `item-${i}`, type: 'productCatalogue.product',
+    })) });
+    started++;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      if (started === 4) controller.abort();
+    });
+  });
+  await assert.rejects(client.searchProducts({ query: 'oil', limit: 8 }, { signal: controller.signal }), error => error.code === 'cancelled');
+  assert.equal(started, 4);
+});
+
+test('client forwards cancellation for product and availability without aborting another caller', async () => {
+  for (const method of ['getProduct', 'getProductAvailability']) {
+    let finish;
+    let upstreamSignal;
+    let calls = 0;
+    const client = clientWith(async (_, { signal }) => {
+      calls++;
+      upstreamSignal = signal;
+      return new Promise(resolve => { finish = () => resolve(response(method === 'getProduct' ? detail : stores)); });
+    });
+    const controller = new AbortController();
+    const cancelled = client[method]({ product_id: '294-101115' }, { signal: controller.signal });
+    const survivor = client[method]({ product_id: '294-101115' });
+    const rejected = assert.rejects(cancelled, error => error.code === 'cancelled');
+    controller.abort();
+    await rejected;
+    assert.equal(upstreamSignal.aborted, false);
+    finish();
+    assert.equal((await survivor).product_id, '294-101115');
+    assert.equal(calls, 1);
+  }
+});
