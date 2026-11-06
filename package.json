@@ -21,6 +21,10 @@
     "zod": "^4.6.7"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/benjaminstary/superzoo-mcp.git"
+  },
   "bin": {
     "superzoo-mcp": "dist/index.js"
   },

@@ -11,3 +11,11 @@ For a new market, verify the official shop domain, language, currency, search mu
 Do not commit credentials, account data, downloaded apps, decompiled app code, or local machine paths. Keep local research in `.local/`. Fixtures should contain only the public facts needed to test the API contract, without copied product descriptions or unrelated response fields.
 
 Open a GitHub issue for reproducible bugs or a pull request with a short description and test results. For security issues, follow SECURITY.md. This project is unofficial; it does not own Super zoo trademarks, product images, or descriptions.
+
+## Publishing to npm
+
+Add an npm granular access token as the GitHub Actions repository secret `NPM_TOKEN`. It must allow publishing `superzoo-mcp`; for the first release, it must allow creating the package under your npm account. Enable bypass 2FA on the token so publishing does not require an interactive code. Keep the token limited to the required package and renew it before expiry.
+
+Update the version with `npm version patch --no-git-tag-version` (or `minor` / `major`), then commit and push both package files. For the initial release, the existing version is `0.1.0`. Create a GitHub release with the matching tag, such as `v0.1.0`, pointing to that commit.
+
+Publishing a stable GitHub release runs `.github/workflows/publish.yml`: it checks the tag against `package.json`, installs locked dependencies, typechecks, tests, inspects the package contents, and publishes a public package with npm provenance. Drafts and prereleases do not publish. A version already on npm cannot be overwritten; publish a new version for changes.
