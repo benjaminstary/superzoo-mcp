@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "SKPIC-450",
+      "name": "Skalica",
+      "address": "Karvašova 3290/1, Skalica",
+      "alias": "skalica",
+      "image": "1184.png",
+      "openingHours": "Po&nbsp;&ndash;&nbsp;Ne: 9:00&nbsp;&ndash;&nbsp;20:00",
+      "availability": {
+        "status": "inStock",
+        "text": "zajtra od 10:00"
+      }
+    },
+    {
+      "id": "SKPIC-610",
+      "name": "Bratislava Bory Mall",
+      "address": "Lamač 6780, Bratislava",
+      "alias": "bratislava-bory-mall",
+      "image": "817-2",
+      "openingHours": "Po&nbsp;&ndash;&nbsp;Pá: 10:00&nbsp;&ndash;&nbsp;21:00<br>So&nbsp;&ndash;&nbsp;Ne: 9:00&nbsp;&ndash;&nbsp;21:00",
+      "availability": {
+        "status": "notAvailable",
+        "text": "nedostupné"
+      }
+    },
+    {
+      "id": "SKPIC-520",
+      "name": "Bratislava Central",
+      "address": "Metodova 6, Bratislava",
+      "alias": "bratislava-central",
+      "image": "813-2",
+      "openingHours": "Po&nbsp;&ndash;&nbsp;Ne: 10:00&nbsp;&ndash;&nbsp;21:00",
+      "availability": {
+        "status": "inStock",
+        "text": "zajtra od 11:00"
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "totalCount": 233,
+  "items": [
+    {
+      "id": "1bf0e2eb-1d7f-4849-882d-c771662096cd",
+      "type": "productCatalogue.brand",
+      "title": "Brit Care",
+      "attributes": []
+    },
+    {
+      "id": "bb38b685-becb-410f-9bd2-4af66dca5739",
+      "type": "productCatalogue.brand",
+      "title": "Brit Care Mini",
+      "attributes": []
+    },
+    {
+      "id": "294-101115",
+      "type": "productCatalogue.product",
+      "title": "BRIT Care Salmon Oil 250ml",
+      "alias": "brit-care-salmon-oil-250ml",
+      "attributes": {
+        "disallowedPriceLevels": [],
+        "productSaleForbidden": [
+          "false"
+        ]
+      }
+    },
+    {
+      "id": "294-101116",
+      "type": "productCatalogue.product",
+      "title": "Brit Care Salmon Oil 500 ml",
+      "alias": "brit-care-salmon-oil-500-ml",
+      "attributes": {
+        "disallowedPriceLevels": [],
+        "productSaleForbidden": [
+          "false"
+        ]
+      }
+    },
+    {
+      "id": "294-101117",
+      "type": "productCatalogue.product",
+      "title": "Brit Care Salmon Oil 1000 ml",
+      "alias": "brit-care-salmon-oil-1000-ml",
+      "attributes": {
+        "disallowedPriceLevels": [],
+        "productSaleForbidden": [
+          "false"
+        ]
+      }
+    }
+  ]
+}

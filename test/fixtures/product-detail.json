@@ -1,0 +1,83 @@
+{
+  "product": {
+    "id": "294-101115",
+    "name": "BRIT Care Salmon Oil 250ml",
+    "alias": "brit-care-salmon-oil-250ml",
+    "ean": "8594031442844",
+    "catalogueNumber": "294-101115",
+    "canBuy": true,
+    "brand": {
+      "id": "1bf0e2eb-1d7f-4849-882d-c771662096cd",
+      "name": "Brit Care",
+      "alias": "brit-care",
+      "isOwnBrand": false,
+      "brandSlide": null,
+      "logo": {
+        "id": "brit-care",
+        "alt": "Brit Care"
+      }
+    }
+  },
+  "price": {
+    "variant": "default",
+    "originalPrice": null,
+    "sellPrice": "13.99",
+    "calculatedLowestPrice": null,
+    "salePercentage": null,
+    "originalUnitPrice": null,
+    "sellUnitPrice": null,
+    "voucherCampaign": null
+  },
+  "variants": [
+    {
+      "variants": [
+        {
+          "id": "294-101115",
+          "name": "250 ml",
+          "alias": "brit-care-salmon-oil-250ml",
+          "isActive": true,
+          "isDisabled": false,
+          "color": null,
+          "image": null,
+          "position": null
+        },
+        {
+          "id": "294-101116",
+          "name": "500 ml",
+          "alias": "brit-care-salmon-oil-500-ml",
+          "isActive": false,
+          "isDisabled": false,
+          "color": null,
+          "image": null,
+          "position": null
+        },
+        {
+          "id": "294-101117",
+          "name": "1 l",
+          "alias": "brit-care-salmon-oil-1000-ml",
+          "isActive": false,
+          "isDisabled": false,
+          "color": null,
+          "image": null,
+          "position": null
+        }
+      ],
+      "variantName": "Objem",
+      "isColorVariant": false
+    }
+  ],
+  "availability": {
+    "availableStoresCount": 44,
+    "availableOnFavoriteStore": false,
+    "favoriteStoreName": null,
+    "storeAvailability": {
+      "text": "zajtra od 10:00",
+      "availability": "inStock"
+    },
+    "deliveryAvailability": {
+      "text": "zajtra",
+      "availability": "available"
+    },
+    "isFreeDelivery": false
+  }
+}

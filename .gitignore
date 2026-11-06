@@ -1,0 +1,13 @@
+node_modules/
+.local/
+*.xapk
+*.apk
+*.aab
+*.tgz
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+dist/
+*.tsbuildinfo
