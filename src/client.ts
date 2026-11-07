@@ -8,14 +8,40 @@ import { SuperzooError } from './errors.js';
 const SEARCH = 'https://full-text-search.superzoo.cz/search/api';
 const CANDIDATE_LIMIT = 200;
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/);
+const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
+
+function compareDecimals(left: string, right: string): number {
+  const [leftWhole = '', leftFraction = ''] = left.split('.');
+  const [rightWhole = '', rightFraction = ''] = right.split('.');
+  const a = leftWhole.replace(/^0+/, '');
+  const b = rightWhole.replace(/^0+/, '');
+  if (a.length !== b.length) return a.length - b.length;
+  if (a !== b) return a < b ? -1 : 1;
+  const width = Math.max(leftFraction.length, rightFraction.length);
+  const x = leftFraction.padEnd(width, '0');
+  const y = rightFraction.padEnd(width, '0');
+  return x === y ? 0 : x < y ? -1 : 1;
+}
+
 export const productInput = z.object({ product_id: idSchema });
 export const searchInput = z.object({
   query: z.string().trim().min(1).max(200),
   limit: z.number().int().min(1).max(50).default(10),
+  brand: z.string().trim().min(1).max(100).optional()
+    .describe('Exact brand name, ignoring case and accents.'),
+  min_price: decimalText.optional()
+    .describe('Inclusive minimum public offer price. Conditional offers retain their eligibility labels.'),
+  max_price: decimalText.optional()
+    .describe('Inclusive maximum public offer price. Conditional offers retain their eligibility labels.'),
+  online_only: z.boolean().optional()
+    .describe('Include only explicit delivery availability; unknown status is omitted. No address or timing guarantee.'),
+}).refine(input => input.min_price === undefined || input.max_price === undefined ||
+  compareDecimals(input.min_price, input.max_price) <= 0, {
+  path: ['max_price'], message: 'Maximum price must be at least the minimum price',
 });
 export const availabilityInput = productInput.extend({ city: z.string().trim().min(1).max(100).optional() });
 const nullableText = z.string().nullable().optional();
-const decimal = z.string().regex(/^\d+(?:\.\d+)?$/).nullable().optional();
+const decimal = decimalText.nullable().optional();
 const priceSchema = z.object({
   sellPrice: decimal, originalPrice: decimal, calculatedLowestPrice: decimal, variant: nullableText,
 }).passthrough().nullable().optional();
@@ -99,7 +125,25 @@ export class SuperzooClient {
   }
 
   async searchProducts(input: z.input<typeof searchInput>, requestContext: RequestContext = {}): Promise<SearchResult> {
-    const { query, limit } = searchInput.parse(input);
+    const { query, limit, brand, min_price, max_price, online_only } = searchInput.parse(input);
+    const filters = {
+      ...(brand === undefined ? {} : { brand }),
+      ...(min_price === undefined ? {} : { min_price }),
+      ...(max_price === undefined ? {} : { max_price }),
+      ...(online_only === undefined ? {} : { online_only }),
+    };
+    const requiresDetails = brand !== undefined || min_price !== undefined || max_price !== undefined || online_only === true;
+    const matches = (product: ProductResult): boolean => {
+      if (brand !== undefined && (product.brand === null || fold(product.brand) !== fold(brand))) return false;
+      if (min_price !== undefined || max_price !== undefined) {
+        const amount = product.price?.amount;
+        if (amount == null) return false;
+        if (min_price !== undefined && compareDecimals(amount, min_price) < 0) return false;
+        if (max_price !== undefined && compareDecimals(amount, max_price) > 0) return false;
+      }
+      // Only this delivery code is verified; branch stock and canBuy are separate facts.
+      return online_only !== true || product.availability?.deliveryAvailability?.availability === 'available';
+    };
     const url = new URL(`${SEARCH}/mutations/superzoo_${this.market.country.toLowerCase()}/languages/${this.market.language}/search`);
     url.search = new URLSearchParams({
       term: query, 'types[0]': 'productCatalogue.product', limit: String(CANDIDATE_LIMIT),
@@ -109,8 +153,9 @@ export class SuperzooClient {
     const { data, checked_at } = await this.policy.request({
       market: this.market.country, operation: 'search', url, schema: searchSchema, ...requestContext,
     });
+    const items = data.items.slice(0, CANDIDATE_LIMIT);
     const seen = new Set();
-    const candidates = data.items.filter((item): item is SearchCandidate => {
+    const candidates = items.filter((item): item is SearchCandidate => {
       if (item.type !== 'productCatalogue.product' || !idSchema.safeParse(item.id).success || !item.alias) return false;
       const attrs = Array.isArray(item.attributes) ? {} : item.attributes ?? {};
       // Unexpected restriction encodings fail closed rather than exposing a forbidden product.
@@ -122,32 +167,42 @@ export class SuperzooClient {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
       return true;
-    }).slice(0, limit);
-    const products: SearchProduct[] = new Array(candidates.length);
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
-      while (next < candidates.length) {
+    });
+    const products: SearchProduct[] = [];
+    let productsChecked = 0;
+    let detailFailures = 0;
+    while (productsChecked < candidates.length && products.length < limit) {
+      const window = candidates.slice(productsChecked, productsChecked + Math.min(4, limit - products.length));
+      const enriched = await Promise.all(window.map(async (item): Promise<SearchProduct | null> => {
         if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
-        const index = next++;
-        const item = candidates[index]!;
+        productsChecked++;
         const base = { product_id: item.id, name: item.title, description: item.annotation ?? null,
           url: link(this.market, item.alias), price: null, availability: null };
-        try { products[index] = { ...base, ...await this.getProduct({ product_id: item.id }, requestContext) }; }
+        try {
+          const product = await this.getProduct({ product_id: item.id }, requestContext);
+          return matches(product) ? { ...base, ...product } : null;
+        }
         catch (error) {
           if (requestContext.signal?.aborted || (error instanceof SuperzooError && error.code === 'cancelled')) {
             throw new SuperzooError('cancelled', 'Superzoo request cancelled');
           }
-          products[index] = { ...base, detail_error: error instanceof Error ? error.message : 'Superzoo request failed' };
+          detailFailures++;
+          return requiresDetails ? null : { ...base, detail_error: error instanceof Error ? error.message : 'Superzoo request failed' };
         }
-      }
-    }));
+      }));
+      products.push(...enriched.filter((product): product is SearchProduct => product !== null));
+    }
     if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
     return {
       ...context(this.market, url.toString(), checked_at), query, products,
       upstream_total_count: data.totalCount, total_count_is_product_count: false,
-      candidates_checked: data.items.length,
-      candidate_limit_reached: data.totalCount > data.items.length,
+      candidates_checked: items.length,
+      candidate_limit_reached: data.totalCount > items.length || data.items.length > items.length,
       requested_limit_filled: products.length === limit,
+      filters_applied: filters,
+      products_checked: productsChecked,
+      detail_failures: detailFailures,
+      coverage: 'bounded_candidates',
     };
   }
 

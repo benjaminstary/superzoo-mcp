@@ -68,6 +68,8 @@ export function createHttpServer({ config = readConfig(), client = new SuperzooC
       // Stateless transport: each request gets its own MCP instance. No session map or shared protocol state.
       const mcp = createServer(client);
       const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
+      // SDK transport close aborts handler extra.signal. Listen on the outgoing response:
+      // incoming request close also fires after a normal, fully read JSON body.
       const cleanup = () => { void mcp.close().catch(() => {}); };
       response.once('close', cleanup);
       await mcp.connect(transport);

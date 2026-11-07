@@ -91,11 +91,13 @@ export const searchResultSchema = z.object({
     brand: z.string().optional(),
     min_price: z.string().regex(/^\d+(?:\.\d+)?$/).optional(),
     max_price: z.string().regex(/^\d+(?:\.\d+)?$/).optional(),
-    // Reserved pending verification; this schema does not enable a runtime filter.
+    // Verified delivery mapping and unknown handling: docs/investigation.md, Task 4 follow-up.
     online_only: z.boolean().optional(),
   }).optional(),
   products_checked: count.optional(),
-  coverage: z.literal('bounded_candidates').optional(),
+  detail_failures: count.optional(),
+  coverage: z.literal('bounded_candidates').optional()
+    .describe('Filters examine at most 200 upstream candidates. Omitted candidates may contain matches; conditional offers remain conditional.'),
 });
 export type SearchResult = z.output<typeof searchResultSchema>;
 

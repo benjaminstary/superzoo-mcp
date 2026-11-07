@@ -43,7 +43,7 @@ test('HTTP initializes and calls all tools without a bearer token; concurrent cl
     t.after(() => client.close());
     await client.connect(new StreamableHTTPClientTransport(url));
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 3);
+    assert.equal(tools.tools.length, 5);
     assert.match(tools.tools.find(x => x.name === 'get_product').description, /CZK/);
     const product = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
     assert.equal(product.structuredContent.market, 'CZ');
@@ -84,3 +84,76 @@ test('HTTP explicitly allows configured origins and hostnames, with CORS for bro
   assert.equal(response.headers['access-control-allow-origin'], 'https://client.example.com');
   assert.match(response.headers['access-control-allow-headers'], /mcp-protocol-version/i);
 });
+
+function toolRequest(url, id) {
+  const req = request(url, { method: 'POST', headers: {
+    'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
+  } });
+  const result = new Promise((resolve, reject) => {
+    req.once('response', response => {
+      let text = '';
+      response.on('data', chunk => { text += chunk; });
+      response.once('end', () => resolve(JSON.parse(text)));
+      response.once('error', reject);
+    });
+    req.once('error', reject);
+  });
+  // A disconnected request is expected to reject before a response exists.
+  result.catch(() => {});
+  req.end(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call',
+    params: { name: 'get_product', arguments: { product_id: '294-101115' } } }));
+  return { req, result };
+}
+
+async function waitUntil(predicate) {
+  const deadline = Date.now() + 1500;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, 'Timed out waiting for protocol event');
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
+
+for (const shared of [false, true]) {
+  test(`HTTP disconnect cancels caller while ${shared ? 'preserving another shared lookup' : 'aborting unneeded upstream work'}`, { timeout: 4000 }, async t => {
+    let upstreamSignal;
+    let finish;
+    let fetches = 0;
+    const api = new SuperzooClient({ fetchImpl: async (_url, init) => {
+      fetches++;
+      upstreamSignal = init.signal;
+      return new Promise(resolve => { finish = () => resolve(new Response(JSON.stringify(fixture('product-detail')))); });
+    } });
+    const callerSignals = [];
+    const getProduct = api.getProduct.bind(api);
+    api.getProduct = (input, context) => {
+      callerSignals.push(context?.signal);
+      return getProduct(input, context);
+    };
+    const server = createHttpServer({ client: api });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const url = new URL(`http://127.0.0.1:${server.address().port}/mcp`);
+    const first = toolRequest(url, 1);
+    await waitUntil(() => upstreamSignal);
+    // A completed incoming body must leave its tool handler running.
+    assert.equal(upstreamSignal.aborted, false);
+    let second;
+    if (shared) {
+      second = toolRequest(url, 2);
+      await waitUntil(() => callerSignals.length === 2);
+    }
+    first.req.destroy();
+    await waitUntil(() => callerSignals[0]?.aborted);
+    if (shared) {
+      assert.equal(upstreamSignal.aborted, false);
+      assert.equal(callerSignals[1].aborted, false);
+      finish();
+      const response = await second.result;
+      assert.equal(response.result.structuredContent.product_id, '294-101115');
+      assert.equal(fetches, 1);
+    } else {
+      await waitUntil(() => upstreamSignal.aborted);
+    }
+  });
+}
