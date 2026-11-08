@@ -91,6 +91,7 @@ interface ClientOptions {
   country?: string;
   fetchImpl?: typeof globalThis.fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 type SearchCandidate = z.output<typeof searchSchema>['items'][number] & { alias: string };
@@ -102,9 +103,9 @@ type SearchProduct = (ProductResult & { description: string | null }) | {
 export class SuperzooClient {
   readonly market: Market;
   private readonly policy: ReturnType<typeof createRequestPolicy>;
-  constructor({ country = 'SK', fetchImpl = globalThis.fetch, timeoutMs = 15_000 }: ClientOptions = {}) {
+  constructor({ country = 'SK', fetchImpl = globalThis.fetch, timeoutMs = 15_000, signal }: ClientOptions = {}) {
     this.market = getMarket(country);
-    this.policy = createRequestPolicy({ fetchImpl, timeoutMs });
+    this.policy = createRequestPolicy({ fetchImpl, timeoutMs, ...(signal === undefined ? {} : { signal }) });
   }
 
   async getProduct(input: z.input<typeof productInput>, requestContext: RequestContext = {}): Promise<ProductResult> {

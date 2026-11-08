@@ -7,11 +7,15 @@ import { createHttpServer } from './http.js';
 
 try {
   const config = readConfig();
-  const client = new SuperzooClient({ country: config.country });
+  const shutdown = new AbortController();
+  const client = new SuperzooClient({ country: config.country, signal: shutdown.signal });
   if (config.transport === 'stdio') {
     const server = createServer(client);
     await server.connect(new StdioServerTransport());
-    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void server.close(); });
+    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+      shutdown.abort();
+      void server.close();
+    });
   } else {
     const server = createHttpServer({ config, client });
     server.on('error', error => { console.error(`Superzoo HTTP server error: ${error instanceof Error ? error.message : 'Unknown error'}`); process.exitCode = 1; });
@@ -21,7 +25,11 @@ try {
     });
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
       server.close();
-      setTimeout(() => { server.closeAllConnections(); }, 5000).unref();
+      setTimeout(() => {
+        // Cancel every queued operation before socket closure can free upstream slots.
+        shutdown.abort();
+        server.closeAllConnections();
+      }, 5000).unref();
     });
   }
 } catch (error) {

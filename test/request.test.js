@@ -67,6 +67,23 @@ test('cancelled queued work never fetches and frees its queue slot', async () =>
   await Promise.all([...active, next]);
 });
 
+test('shutdown cancels active and queued operations together and rejects subsequent requests', async () => {
+  const held = heldFetch();
+  const shutdown = new AbortController();
+  const policy = createRequestPolicy({ fetchImpl: held.fetchImpl, signal: shutdown.signal, timeoutMs: 1000 });
+  const pending = Array.from({ length: 6 }, (_, i) => policy.request(args(`shutdown-${i}`, {
+    operation: i % 2 ? 'search' : 'product',
+  })));
+  const rejected = Promise.all(pending.map(promise => assert.rejects(promise, code('cancelled'))));
+  await turn();
+  assert.equal(held.pending.length, 4);
+  shutdown.abort();
+  await rejected;
+  assert.equal(held.pending.length, 4, 'queued operations must never fetch during shutdown');
+  assert.ok(held.pending.every(request => request.signal.aborted));
+  await assert.rejects(policy.request(args('after-shutdown')), code('cancelled'));
+});
+
 test('deadline covers queue time instead of restarting when a slot opens', async t => {
   clock(t);
   const held = heldFetch();

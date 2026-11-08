@@ -57,9 +57,10 @@ function retryDelay(value: string | null): number {
   return 200 + Math.floor(Math.random() * 301);
 }
 
-export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 15_000 }: {
+export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 15_000, signal: shutdownSignal }: {
   fetchImpl?: typeof globalThis.fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
 } = {}) {
   let active = 0;
   const queue: QueueEntry[] = [];
@@ -171,7 +172,7 @@ export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 
     let cacheHit = false;
     let status = 'ok';
     try {
-      if (options.signal?.aborted) throw cancelled();
+      if (shutdownSignal?.aborted || options.signal?.aborted) throw cancelled();
       const key = options.operation !== 'search' && options.productId !== undefined
         ? JSON.stringify([options.market, options.operation, options.productId]) : undefined;
       const cached = key === undefined ? undefined : cache.get(key);
@@ -186,9 +187,10 @@ export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 
       let flight = key === undefined ? undefined : flights.get(key);
       if (!flight || flight.controller.signal.aborted) {
         const controller = new AbortController();
+        const signal = shutdownSignal ? AbortSignal.any([controller.signal, shutdownSignal]) : controller.signal;
         const timer = setTimeout(() => controller.abort(timeout()), timeoutMs);
-        const promise = retrieve(options, controller.signal, started + timeoutMs).then(result => {
-          if (key !== undefined && !controller.signal.aborted) {
+        const promise = retrieve(options, signal, started + timeoutMs).then(result => {
+          if (key !== undefined && !signal.aborted) {
             // One LRU cache across product details and raw store availability.
             cache.delete(key);
             cache.set(key, { result, expires: Date.now() + (options.operation === 'product' ? 60_000 : 15_000) });
