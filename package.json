@@ -1,6 +1,6 @@
 {
   "name": "superzoo-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Read-only Super zoo product search, prices, and store availability for Slovakia, Czechia, and Poland",
   "type": "module",
   "engines": {

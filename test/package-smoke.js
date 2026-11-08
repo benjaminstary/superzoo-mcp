@@ -40,6 +40,7 @@ test('packed npm package installs and serves MCP through its consumer executable
   transport.stderr.on('data', chunk => { diagnostics += chunk; });
   t.after(() => client.close());
   await client.connect(transport);
+  assert.equal(client.getServerVersion().version, manifest.version);
   const tools = await client.listTools();
   assert.deepEqual(tools.tools.map(tool => tool.name).sort(),
     ['compare_products', 'find_common_stores', 'get_product', 'get_product_availability', 'search_products']);

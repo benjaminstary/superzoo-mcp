@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { SuperzooClient, searchInput, productInput, availabilityInput } from './client.js';
@@ -7,6 +8,8 @@ import { productResultSchema, availabilityResultSchema, searchResultSchema,
 import type { RequestContext } from './contracts.js';
 import { compareProducts, findCommonStores } from './shopping.js';
 import { toToolError } from './errors.js';
+
+const { version }: { version: string } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 function handleTool<Input>(run: (args: Input, context: RequestContext) => Promise<Record<string, unknown>>) {
   return async (args: Input, extra: { signal: AbortSignal }): Promise<CallToolResult> => {
@@ -21,7 +24,7 @@ function handleTool<Input>(run: (args: Input, context: RequestContext) => Promis
 
 export function createServer(client = new SuperzooClient()) {
   const { name, currency } = client.market;
-  const server = new McpServer({ name: 'superzoo-mcp', version: '0.1.0' });
+  const server = new McpServer({ name: 'superzoo-mcp', version });
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
   server.registerTool('search_products', {
     description: `Find Superzoo products in ${name}, with public online ${currency} offers and availability summaries. `

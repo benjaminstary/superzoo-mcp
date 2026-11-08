@@ -16,6 +16,13 @@ Open a GitHub issue for reproducible bugs or a pull request with a short descrip
 
 Add an npm granular access token as the GitHub Actions repository secret `NPM_TOKEN`. It must allow publishing `superzoo-mcp`; for the first release, it must allow creating the package under your npm account. Enable bypass 2FA on the token so publishing does not require an interactive code. Keep the token limited to the required package and renew it before expiry.
 
-Update the version with `npm version patch --no-git-tag-version` (or `minor` / `major`), then commit and push both package files. For the initial release, the existing version is `0.1.0`. Create a GitHub release with the matching tag, such as `v0.1.0`, pointing to that commit.
+`package.json` is the source of truth for the package and MCP server version. To prepare a release:
+
+1. Run `npm version patch --no-git-tag-version` (or `minor` / `major`). npm updates `package.json` and both root version entries in `package-lock.json`; do not edit dependency versions in the lockfile.
+2. Move the changes under **Unreleased** in `CHANGELOG.md` into a section for the new version and release date. Add its release link and update the Unreleased comparison link to start from the new tag. Keep historical version numbers unchanged.
+3. Run `npm run typecheck`, `npm test`, and `npm run test:package`, then commit and push the package files, changelog, and any release changes.
+4. Read the exact tag from the package version with `node -p "'v' + require('./package.json').version"`. Create a stable GitHub release with that tag pointing to the tested commit.
+
+The MCP handshake reads the version from the installed package's `package.json`, including in Docker. No runtime source version needs updating. Versions in test client identities are independent of the server version.
 
 Publishing a stable GitHub release runs `.github/workflows/publish.yml`: it checks the tag against `package.json`, installs locked dependencies, typechecks, tests, inspects the package contents, and publishes a public package with npm provenance. Drafts and prereleases do not publish. A version already on npm cannot be overwritten; publish a new version for changes.

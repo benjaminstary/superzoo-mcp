@@ -52,6 +52,12 @@ async function connect(t, api) {
   return client;
 }
 
+test('MCP handshake reports the package version', async t => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+  const client = await connect(t, new SuperzooClient());
+  assert.equal(client.getServerVersion().version, manifest.version);
+});
+
 test('aggregate tools preserve partial successes in declared output schemas', async t => {
   const stock = JSON.parse(readFileSync(new URL('./fixtures/store-availability.json', import.meta.url)));
   const api = new SuperzooClient({ fetchImpl: async url => {
