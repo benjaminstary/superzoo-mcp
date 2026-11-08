@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { SuperzooClient } from '../dist/client.js';
+import { searchResultSchema } from '../dist/contracts.js';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url)));
 const detail = fixture('product-detail');
@@ -141,4 +142,349 @@ test('city filter matches accented names and preserves no-match results as empty
   const client = clientWith(async () => response({ items: [{ ...stores.items[0], name: 'Žilina', address: 'Žilina' }] }));
   assert.equal((await client.getProductAvailability({ product_id: '294-101115', city: 'zilina' })).stores.length, 1);
   assert.equal((await client.getProductAvailability({ product_id: '294-101115', city: 'Kosice' })).stores.length, 0);
+});
+
+test('simultaneous searches share the four-fetch client budget and duplicate detail work', async () => {
+  let active = 0;
+  let peak = 0;
+  let details = 0;
+  const client = clientWith(async url => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    active--;
+    const parsed = new URL(url);
+    if (parsed.hostname === 'full-text-search.superzoo.cz') return response({ totalCount: 8,
+      items: Array.from({ length: 8 }, (_, i) => ({ id: `item-${i}`, title: `Product ${i}`,
+        alias: `item-${i}`, type: 'productCatalogue.product' })) });
+    details++;
+    const id = parsed.pathname.split('/').at(-1);
+    return response({ ...detail, product: { ...detail.product, id } });
+  });
+  const results = await Promise.all([client.searchProducts({ query: 'one', limit: 8 }), client.searchProducts({ query: 'two', limit: 8 })]);
+  assert.equal(peak, 4);
+  assert.equal(details, 8);
+  assert.deepEqual(results[0].products.map(product => product.product_id), results[1].products.map(product => product.product_id));
+});
+
+test('availability caches raw stores before city filtering and preserves original timestamps', async () => {
+  let calls = 0;
+  const client = clientWith(async () => { calls++; return response(stores); });
+  const first = await client.getProductAvailability({ product_id: '294-101115', city: 'Bratislava' });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const all = await client.getProductAvailability({ product_id: '294-101115' });
+  assert.equal(calls, 1);
+  assert.equal(all.stores.length, 3);
+  assert.equal(first.checked_at, all.checked_at);
+});
+
+test('mismatched IDs fail validation before cache insertion', async () => {
+  let count = 0;
+  const client = clientWith(async () => response(++count === 1
+    ? { ...detail, product: { ...detail.product, id: 'different' } } : detail));
+  await assert.rejects(client.getProduct({ product_id: '294-101115' }), error => error.code === 'invalid_response');
+  assert.equal((await client.getProduct({ product_id: '294-101115' })).product_id, '294-101115');
+  assert.equal(count, 2);
+});
+
+test('search parent cancellation rejects rather than reporting partial success and stops enrichment', async () => {
+  const controller = new AbortController();
+  let started = 0;
+  const client = clientWith(async (url, { signal }) => {
+    if (String(url).includes('full-text-search')) return response({ totalCount: 8, items: Array.from({ length: 8 }, (_, i) => ({
+      id: `item-${i}`, title: 'Product', alias: `item-${i}`, type: 'productCatalogue.product',
+    })) });
+    started++;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      if (started === 4) controller.abort();
+    });
+  });
+  await assert.rejects(client.searchProducts({ query: 'oil', limit: 8 }, { signal: controller.signal }), error => error.code === 'cancelled');
+  assert.equal(started, 4);
+});
+
+test('client forwards cancellation for product and availability without aborting another caller', async () => {
+  for (const method of ['getProduct', 'getProductAvailability']) {
+    let finish;
+    let upstreamSignal;
+    let calls = 0;
+    const client = clientWith(async (_, { signal }) => {
+      calls++;
+      upstreamSignal = signal;
+      return new Promise(resolve => { finish = () => resolve(response(method === 'getProduct' ? detail : stores)); });
+    });
+    const controller = new AbortController();
+    const cancelled = client[method]({ product_id: '294-101115' }, { signal: controller.signal });
+    const survivor = client[method]({ product_id: '294-101115' });
+    const rejected = assert.rejects(cancelled, error => error.code === 'cancelled');
+    controller.abort();
+    await rejected;
+    assert.equal(upstreamSignal.aborted, false);
+    finish();
+    assert.equal((await survivor).product_id, '294-101115');
+    assert.equal(calls, 1);
+  }
+});
+
+const candidateDetail = (id, overrides = {}) => ({
+  ...detail, ...overrides, product: { ...detail.product, id, ...overrides.product },
+});
+const searchCandidate = id => ({ id, title: `Candidate ${id}`, alias: id, type: 'productCatalogue.product' });
+const catalogueClient = (entries, options = {}) => {
+  const calls = [];
+  const items = options.items ?? Object.keys(entries).map(searchCandidate);
+  const client = clientWith(async url => {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'full-text-search.superzoo.cz') {
+      assert.equal(parsed.searchParams.get('limit'), '200');
+      for (const filter of ['brand', 'min_price', 'max_price', 'online_only', 'page', 'offset']) {
+        assert.equal(parsed.searchParams.has(filter), false);
+      }
+      return response({ items, totalCount: options.totalCount ?? items.length });
+    }
+    const id = parsed.pathname.split('/').at(-1);
+    calls.push(id);
+    const value = entries[id];
+    return value instanceof Response ? value.clone() : response(value);
+  });
+  return { client, calls };
+};
+
+test('brand filtering uses enriched exact names, ignoring case and accents, and scans past nonmatches', async () => {
+  const { client, calls } = catalogueClient({
+    wrong: candidateDetail('wrong', { product: { brand: { name: 'Brit Care Mini' } } }),
+    unknown: candidateDetail('unknown', { product: { brand: null } }),
+    match: candidateDetail('match', { product: { brand: { name: 'Brít Čare' } } }),
+    unnecessary: candidateDetail('unnecessary'),
+  });
+  const result = await client.searchProducts({ query: 'food', limit: 1, brand: '  BRIT CARE  ' });
+  assert.deepEqual(result.products.map(p => p.product_id), ['match']);
+  assert.deepEqual(calls, ['wrong', 'unknown', 'match']);
+  assert.deepEqual(result.filters_applied, { brand: 'BRIT CARE' });
+  assert.equal(result.products_checked, 3);
+  assert.equal(result.requested_limit_filled, true);
+  assert.equal(result.detail_failures, 0);
+  assert.deepEqual(searchResultSchema.parse(result), result);
+});
+
+for (const [min_price, max_price, expected] of [
+  ['0.10', '9.99', ['ten-cents', 'nine']],
+  ['9.99', '10.00', ['nine', 'ten']],
+  ['0.1000', '00.10', ['ten-cents']],
+  [undefined, '0.10', ['low', 'ten-cents']],
+  ['10.00', undefined, ['ten', 'high']],
+]) {
+  test(`price range ${min_price ?? '*'} to ${max_price ?? '*'} includes exact decimal boundaries`, async () => {
+    const { client } = catalogueClient(Object.fromEntries([
+      ['low', '0.09'], ['ten-cents', '0.10'], ['nine', '9.99'], ['ten', '10.00'], ['high', '10.01'],
+    ].map(([id, amount]) => [id, candidateDetail(id, { price: { sellPrice: amount } })])));
+    const result = await client.searchProducts({ query: 'food', min_price, max_price });
+    assert.deepEqual(result.products.map(p => p.product_id), expected);
+    assert.equal(result.products_checked, 5);
+  });
+}
+
+test('decimal filters preserve differences beyond binary floating-point precision', async () => {
+  const { client } = catalogueClient({
+    low: candidateDetail('low', { price: { sellPrice: '9007199254740992.0000000000000001' } }),
+    exact: candidateDetail('exact', { price: { sellPrice: '9007199254740992.0000000000000002' } }),
+    high: candidateDetail('high', { price: { sellPrice: '9007199254740992.0000000000000003' } }),
+  });
+  const result = await client.searchProducts({ query: 'food',
+    min_price: '9007199254740992.0000000000000002', max_price: '9007199254740992.0000000000000002' });
+  assert.deepEqual(result.products.map(p => p.product_id), ['exact']);
+});
+
+test('invalid filters and reversed exact decimal ranges reject before network access', async () => {
+  let calls = 0;
+  const client = clientWith(async () => { calls++; return response({ items: [], totalCount: 0 }); });
+  for (const filters of [
+    { brand: '' }, { brand: '   ' }, { brand: 'a'.repeat(101) },
+    { online_only: 'true' }, { min_price: 1 }, { min_price: '-1' }, { min_price: '.10' },
+    { min_price: '1.' }, { max_price: '1e2' }, { max_price: ' 10' }, { min_price: 'NaN' },
+    { min_price: '10.00', max_price: '9.99' },
+    { min_price: '1.0000000000000002', max_price: '1.0000000000000001' },
+  ]) {
+    await assert.rejects(client.searchProducts({ query: 'food', ...filters }));
+  }
+  assert.equal(calls, 0);
+});
+
+test('price filtering omits missing offers and amounts while retaining conditional price labels', async () => {
+  const { client } = catalogueClient({
+    absent: candidateDetail('absent', { price: null }),
+    missing: candidateDetail('missing', { price: {} }),
+    conditional: candidateDetail('conditional', {
+      price: { sellPrice: '13.99', originalPrice: '39.99', variant: 'familyPrice', voucherCampaign: { label: 'conditional' } },
+    }),
+  });
+  const result = await client.searchProducts({ query: 'food', min_price: '10.00', max_price: '14.00' });
+  assert.deepEqual(result.products.map(p => p.product_id), ['conditional']);
+  assert.equal(result.products[0].price.amount, '13.99');
+  assert.equal(result.products[0].price.original_amount, '39.99');
+  assert.equal(result.products[0].price.variant, 'familyPrice');
+  assert.deepEqual(result.products[0].price.voucher_campaign, { label: 'conditional' });
+  assert.equal(result.detail_failures, 0);
+});
+
+test('online-only filtering requires the verified delivery code independently of store stock and canBuy', async () => {
+  const { client } = catalogueClient(Object.fromEntries([
+    ['available', { deliveryAvailability: { availability: 'available', text: 'tomorrow' } }],
+    ['unavailable', { deliveryAvailability: { availability: 'notAvailable', text: 'niedostępne' }, storeAvailability: { availability: 'available' } }],
+    ['store-only', { storeAvailability: { availability: 'inStock' }, availableStoresCount: 50 }],
+    ['wrong-code', { deliveryAvailability: { availability: 'inStock' } }],
+    ['future-code', { deliveryAvailability: { availability: 'futureCode' } }],
+    ['missing-code', { deliveryAvailability: {} }],
+    ['null-code', { deliveryAvailability: { availability: null } }],
+    ['missing', null],
+  ].map(([id, availability]) => [id, candidateDetail(id, { availability })])));
+  const result = await client.searchProducts({ query: 'food', online_only: true });
+  assert.deepEqual(result.products.map(p => p.product_id), ['available']);
+  assert.equal(result.products[0].availability.deliveryAvailability.text, 'tomorrow');
+  assert.deepEqual(result.filters_applied, { online_only: true });
+  assert.equal(result.products_checked, 8);
+});
+
+test('combined filters require every predicate while preserving upstream order', async () => {
+  const delivery = code => ({ deliveryAvailability: { availability: code } });
+  const { client } = catalogueClient({
+    brand: candidateDetail('brand', { product: { brand: { name: 'Other' } }, availability: delivery('available') }),
+    price: candidateDetail('price', { price: { sellPrice: '0.01' }, availability: delivery('available') }),
+    delivery: candidateDetail('delivery', { availability: delivery('notAvailable') }),
+    first: candidateDetail('first', { availability: delivery('available') }),
+    second: candidateDetail('second', { availability: delivery('available') }),
+  });
+  const result = await client.searchProducts({ query: 'food', limit: 2, brand: 'Brit Care', min_price: '1', online_only: true });
+  assert.deepEqual(result.products.map(p => p.product_id), ['first', 'second']);
+  assert.equal(result.products_checked, 5);
+});
+
+for (const filters of [{}, { online_only: false }]) {
+  test(`inactive filters ${JSON.stringify(filters)} retain missing fields and partial failures`, async () => {
+    const { client, calls } = catalogueClient({
+      missing: candidateDetail('missing', { price: null, product: { brand: null }, availability: null }),
+      failed: new Response('', { status: 404 }),
+      unnecessary: candidateDetail('unnecessary'),
+    });
+    const result = await client.searchProducts({ query: 'food', limit: 2, ...filters });
+    assert.deepEqual(result.products.map(p => p.product_id), ['missing', 'failed']);
+    assert.equal(result.products[0].price, null);
+    assert.match(result.products[1].detail_error, /404/);
+    assert.equal(result.products[1].availability, null);
+    assert.deepEqual(calls, ['missing', 'failed']);
+    assert.equal(result.detail_failures, 1);
+    assert.equal(result.products_checked, 2);
+    assert.deepEqual(result.filters_applied, filters);
+    assert.deepEqual(searchResultSchema.parse(result), result);
+  });
+}
+
+for (const filters of [{ brand: 'Brit Care' }, { min_price: '0' }, { max_price: '100' }, { online_only: true }]) {
+  test(`active filter ${JSON.stringify(filters)} omits and counts failed details and continues scanning`, async () => {
+    const { client } = catalogueClient({
+      failed: new Response('', { status: 404 }),
+      found: candidateDetail('found'),
+    });
+    const result = await client.searchProducts({ query: 'food', limit: 1, ...filters });
+    assert.deepEqual(result.products.map(p => p.product_id), ['found']);
+    assert.equal(result.detail_failures, 1);
+    assert.equal(result.products_checked, 2);
+    assert.equal(result.requested_limit_filled, true);
+  });
+}
+
+test('filtered search respects the first 200 upstream items and reports bounded coverage', async () => {
+  const entries = Object.fromEntries(Array.from({ length: 201 }, (_, i) => [
+    `item-${i}`, candidateDetail(`item-${i}`, { product: { brand: { name: i === 200 ? 'Match' : 'Other' } } }),
+  ]));
+  const { client, calls } = catalogueClient(entries, { totalCount: 500 });
+  const result = await client.searchProducts({ query: 'food', limit: 1, brand: 'Match' });
+  assert.deepEqual(result.products, []);
+  assert.equal(calls.length, 200);
+  assert.equal(calls.includes('item-200'), false);
+  assert.equal(result.products_checked, 200);
+  assert.equal(result.candidates_checked, 200);
+  assert.equal(result.upstream_total_count, 500);
+  assert.equal(result.total_count_is_product_count, false);
+  assert.equal(result.candidate_limit_reached, true);
+  assert.equal(result.requested_limit_filled, false);
+  assert.equal(result.coverage, 'bounded_candidates');
+});
+
+test('filtered search excludes ineligible candidates before enrichment and keeps legacy candidate counters', async () => {
+  const { client, calls } = catalogueClient({ match: candidateDetail('match') }, { totalCount: 9, items: [
+    { ...searchCandidate('brand'), type: 'productCatalogue.brand' },
+    { ...searchCandidate('forbidden'), attributes: { productSaleForbidden: ['true'] } },
+    { ...searchCandidate('restricted'), attributes: { disallowedPriceLevels: ['22'] } },
+    searchCandidate('match'), searchCandidate('match'),
+  ] });
+  const result = await client.searchProducts({ query: 'food', brand: 'Brit Care' });
+  assert.deepEqual(result.products.map(p => p.product_id), ['match']);
+  assert.deepEqual(calls, ['match']);
+  assert.equal(result.candidates_checked, 5);
+  assert.equal(result.products_checked, 1);
+  assert.equal(result.candidate_limit_reached, true);
+  assert.equal(result.requested_limit_filled, false);
+});
+
+test('empty filtered search returns explicit metadata without detail work', async () => {
+  const { client, calls } = catalogueClient({});
+  const result = await client.searchProducts({ query: 'food', min_price: '0' });
+  assert.deepEqual(result.products, []);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(result.filters_applied, { min_price: '0' });
+  assert.equal(result.products_checked, 0);
+  assert.equal(result.detail_failures, 0);
+  assert.equal(result.coverage, 'bounded_candidates');
+  assert.equal(result.candidate_limit_reached, false);
+});
+
+test('filtered enrichment keeps four active lookups at most and stable ranking across completion order', async () => {
+  let active = 0;
+  let peak = 0;
+  const client = clientWith(async url => {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'full-text-search.superzoo.cz') {
+      return response({ totalCount: 12, items: Array.from({ length: 12 }, (_, i) => searchCandidate(`item-${i}`)) });
+    }
+    const id = parsed.pathname.split('/').at(-1);
+    const index = Number(id.slice(5));
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, index % 4 === 0 ? 10 : 1));
+    active--;
+    return response(candidateDetail(id, { product: { brand: { name: index % 2 ? 'Match' : 'Other' } } }));
+  });
+  const result = await client.searchProducts({ query: 'food', limit: 5, brand: 'Match' });
+  assert.equal(peak, 4);
+  assert.deepEqual(result.products.map(p => p.product_id), ['item-1', 'item-3', 'item-5', 'item-7', 'item-9']);
+  assert.equal(result.requested_limit_filled, true);
+});
+
+test('filtered search cancellation rejects and prevents new windows after parent abort', async () => {
+  const controller = new AbortController();
+  let started = 0;
+  const client = clientWith(async (url, { signal }) => {
+    if (String(url).includes('full-text-search')) {
+      return response({ totalCount: 10, items: Array.from({ length: 10 }, (_, i) => searchCandidate(`item-${i}`)) });
+    }
+    started++;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      if (started === 4) controller.abort();
+    });
+  });
+  await assert.rejects(client.searchProducts({ query: 'food', limit: 5, brand: 'Match' }, { signal: controller.signal }),
+    error => error.code === 'cancelled');
+  assert.equal(started, 4);
+});
+
+test('filtered searches reuse cached details without refreshing their retrieval timestamps', async () => {
+  const { client, calls } = catalogueClient({ match: candidateDetail('match') });
+  const original = await client.getProduct({ product_id: 'match' });
+  const result = await client.searchProducts({ query: 'food', brand: 'Brit Care' });
+  assert.equal(result.products[0].checked_at, original.checked_at);
+  assert.equal(result.products_checked, 1);
+  assert.deepEqual(calls, ['match']);
 });

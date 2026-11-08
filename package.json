@@ -14,7 +14,9 @@
     "test": "node --test test/*.test.js",
     "presmoke": "npm run build",
     "smoke": "node scripts/smoke.js",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "pretest:package": "npm run build",
+    "test:package": "node --test test/package-smoke.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
