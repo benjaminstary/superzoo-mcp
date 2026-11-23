@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SuperzooStdioTransport } from './stdio.js';
 import { createServer } from './server.js';
 import { SuperzooClient } from './client.js';
 import { readConfig } from './config.js';
@@ -11,7 +11,7 @@ try {
   const client = new SuperzooClient({ country: config.country, signal: shutdown.signal });
   if (config.transport === 'stdio') {
     const server = createServer(client);
-    await server.connect(new StdioServerTransport());
+    await server.connect(new SuperzooStdioTransport());
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
       shutdown.abort();
       void server.close();

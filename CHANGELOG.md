@@ -3,6 +3,13 @@
 All notable changes to Superzoo MCP are documented here. Changes under
 Unreleased are merged but have not been included in a published release.
 
+## [Unreleased]
+
+### Fixed
+
+- Stdio cancellation stops upstream work for MCP requests with ID `0` or an
+  empty string. Responses preserve the original request ID.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added
