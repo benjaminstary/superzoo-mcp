@@ -77,6 +77,11 @@ const storesSchema = z.object({ items: z.array(z.object({
 })) });
 const link = (market: Market, alias: string) => `${market.web}/${encodeURIComponent(alias)}/`;
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+export function matchesStoreCity(store: { name: string; address: string }, city: string): boolean {
+  return fold(`${store.name} ${store.address}`).includes(fold(city));
+}
+
 const context = (market: Market, source: string, checked_at: string) => ({ source, market: market.country, checked_at });
 const publicPrice = (market: Market, price: z.output<typeof priceSchema>) => price ? {
   amount: price.sellPrice ?? null,
@@ -215,7 +220,7 @@ export class SuperzooClient {
       market: this.market.country, operation: 'availability', productId: product_id, url: source, schema: storesSchema,
       init: { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }, ...requestContext,
     });
-    const stores = data.items.filter(store => !city || fold(`${store.name} ${store.address}`).includes(fold(city)))
+    const stores = data.items.filter(store => !city || matchesStoreCity(store, city))
       .map(store => ({
         store_id: store.id, name: store.name, address: store.address,
         url: link(this.market, store.alias),

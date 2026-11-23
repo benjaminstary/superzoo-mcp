@@ -10,6 +10,8 @@ Unreleased are merged but have not been included in a published release.
 - Stdio cancellation stops upstream work for MCP requests with ID `0` or an
   empty string. Responses preserve the original request ID.
 - Upstream smoke checks emit one bounded diagnostic per check on stderr.
+- City-filtered common-store results retain all stock observations when the same
+  store has different names or addresses across products.
 
 ## [0.2.0] - 2026-11-08
 

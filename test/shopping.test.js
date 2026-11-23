@@ -220,15 +220,27 @@ test('common stores retain requested IDs and failures when no stores are returne
   commonStoresResultSchema.parse(result);
 });
 
-test('common stores delegate accent-insensitive city filtering to the existing client', async () => {
-  const client = new SuperzooClient({ fetchImpl: async () => new Response(JSON.stringify({ items: [
-    { id: 'a', name: 'Žilina', address: 'Žilina', alias: 'zilina', availability: { status: 'inStock' } },
-    { id: 'b', name: 'Košice', address: 'Košice', alias: 'kosice' },
-  ] })) });
+test('common stores preserve every stock observation when city metadata differs by product', async () => {
+  const client = new SuperzooClient({ logRequests: false, fetchImpl: async url => {
+    const first = String(url).includes('/one/');
+    return new Response(JSON.stringify({ items: [
+      { id: 'a', name: 'Aupark', address: first ? 'Veľká okružná' : 'Žilina', alias: 'aupark',
+        availability: { status: 'inStock', text: first ? 'Today' : 'Tomorrow' } },
+      { id: 'b', name: 'Košice', address: 'Košice', alias: 'kosice' },
+    ] }));
+  } });
+  const [first, second] = await Promise.all(['one', 'two'].map(product_id =>
+    client.getProductAvailability({ product_id })));
   const result = await findCommonStores(client, { product_ids: ['one', 'two'], city: '  zilina  ' });
   assert.equal(result.city_filter, 'zilina');
   assert.deepEqual(result.stores.map(s => s.store_id), ['a']);
   assert.equal(result.stores[0].all_in_stock, true);
+  assert.equal(result.stores[0].address, 'Veľká okružná');
+  assert.deepEqual(result.stores[0].products, [
+    { product_id: 'one', status: 'inStock', pickup_text: 'Today', checked_at: first.checked_at, error: null },
+    { product_id: 'two', status: 'inStock', pickup_text: 'Tomorrow', checked_at: second.checked_at, error: null },
+  ]);
+  commonStoresResultSchema.parse(result);
 });
 
 test('common stores reject invalid city filters before lookup', async () => {

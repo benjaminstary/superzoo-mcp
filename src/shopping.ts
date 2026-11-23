@@ -1,4 +1,4 @@
-import type { SuperzooClient } from './client.js';
+import { matchesStoreCity, type SuperzooClient } from './client.js';
 import {
   productBatchInput, commonStoresInput,
   type ProductBatchInput, type CommonStoresInput, type RequestContext,
@@ -67,12 +67,14 @@ export async function findCommonStores(
 ): Promise<CommonStoresResult> {
   const { product_ids, city } = commonStoresInput.parse(input);
   const results = await lookupProducts(product_ids,
-    product_id => client.getProductAvailability({ product_id, ...(city === undefined ? {} : { city }) }, context), context);
+    product_id => client.getProductAvailability({ product_id }, context), context);
   const stores = new Map<string, CommonStoresResult['stores'][number]>();
+  const matchingStoreIds = new Set<string>();
   // Traverse input order so completion timing cannot change display metadata.
   for (const result of results) {
     if (result.error !== null) continue;
     for (const store of result.value.stores) {
+      if (city !== undefined && matchesStoreCity(store, city)) matchingStoreIds.add(store.store_id);
       if (!stores.has(store.store_id)) {
         stores.set(store.store_id, {
           store_id: store.store_id, name: store.name, address: store.address, url: store.url,
@@ -81,7 +83,8 @@ export async function findCommonStores(
       }
     }
   }
-  for (const store of stores.values()) {
+  const matchingStores = [...stores.values()].filter(store => city === undefined || matchingStoreIds.has(store.store_id));
+  for (const store of matchingStores) {
     store.products = results.map((result, index) => {
       const observation = result.value?.stores.find(candidate => candidate.store_id === store.store_id);
       return {
@@ -103,6 +106,6 @@ export async function findCommonStores(
     products: results.map((result, index) => result.error === null
       ? { product_id: product_ids[index]!, checked_at: result.value.checked_at, error: null }
       : { product_id: product_ids[index]!, checked_at: null, error: result.error }),
-    stores: [...stores.values()],
+    stores: matchingStores,
   };
 }
