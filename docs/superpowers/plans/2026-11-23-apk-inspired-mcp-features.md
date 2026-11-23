@@ -126,7 +126,7 @@
 - [x] Run `npm run typecheck`, `npm test`, `npm run test:package`, and `npm pack --dry-run`. Typecheck, all 139 deterministic tests, and the installed-package smoke passed. The dry run listed 13 entries containing runtime JavaScript, README, license, and package metadata. APKs and research data are excluded. All four eligible live calls passed. [Separate live results](../../investigation.md#apk-feature-release-smoke--2026-11-23)
 - [x] Record completed tasks, failed evidence gates, and the status of each proposed feature. Stop after recording the results.
 
-**Release status:** Tasks 1–4 and 6–8 are complete. The verified scope is ready for release, and the changelog entries remain under Unreleased.
+**Release status:** Tasks 1–4 and 6–8 are complete. The verified scope is recorded in the [v0.3.0 changelog](../../../CHANGELOG.md#030---2026-11-23).
 
 | Feature | Status |
 | --- | --- |

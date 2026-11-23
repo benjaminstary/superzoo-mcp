@@ -5,6 +5,8 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
 ### Added
 
 - `get_delivery_options` quotes market-level shipping prices and dates for one
@@ -75,6 +77,7 @@ Unreleased are merged but have not been included in a published release.
 - Docker support, offline tests, live smoke checks, and npm publishing through
   stable GitHub releases.
 
-[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.2.0...master
+[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.3.0...master
+[0.3.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.1.0
