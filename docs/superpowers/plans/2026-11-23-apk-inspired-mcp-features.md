@@ -79,13 +79,15 @@
 
 **Files:** `docs/investigation.md`.
 
-- [ ] Trace animal-category navigation and the parameter filter view model and query. Start at Hermes `#15658`, `#15684`, `#15704`, and `#15708`. Identify the category and facet identifiers and confirm that the calls are public reads with the user ID omitted.
-- [ ] Verify one animal category and one facet, such as life stage, for each supported market. Compare filtered results with the category-only response. Check whether a second page returns distinct IDs. Determine how filtered results honor product-sale and market price-level exclusions.
-- [ ] Record category and facet discovery, pagination, and exclusion behavior. Task 5 requires a verified way to discover the IDs, apply the filter, and preserve the existing market restrictions.
+- [x] Trace animal-category navigation, filter request construction, and the facet view model. Confirm the anonymous call shape and identify the navigation ID and parameter alias fields. Concrete facet values remain unverified.
+- [x] Run the bounded category-browsing probes. Anonymous navigation worked in SK and CZ. The SK descriptor and CZ product filter returned HTTP 500, closing those routes for this pass. Facet selection, pagination, and product exclusions remain unverified.
+- [x] Record the evidence and limits. The end-to-end gate failed for all markets. [Category-browsing investigation](../../investigation.md#anonymous-category-browsing--2026-11-23)
 
 ## Task 5 — Implement verified category browsing
 
 **Files:** `src/client.ts`, `src/contracts.ts`, `src/server.ts`, `test/client.test.js`, `test/server.test.js`, `README.md`, `CHANGELOG.md`.
+
+**Deferred.** Task 4 verified anonymous navigation in SK and CZ. Implementation requires a market with verified facet discovery, successful filtered results, and preserved product restrictions.
 
 **Proposed interface:** `list_product_categories({})` returns public category IDs and names. `browse_products({ category_id, facets?, page?, limit? })` returns public product summaries with provenance and coverage. Publish facet discovery through the category result or a category-scoped lookup according to Task 4. Include pagination only where verified. Start with one verified facet and preserve the current search tool.
 
@@ -119,7 +121,17 @@
 
 **Files:** `docs/investigation.md`, `README.md`, `CHANGELOG.md`.
 
-- [ ] Record feeding tables (Hermes `#15680`, `#59200`) and autocomplete (`#15428`) as separate follow-ups. Feeding tables need a verified anonymous response and clear manufacturer attribution. Autocomplete needs an anonymous response shape and a client that benefits from suggestions. Record exact EAN lookup as unverified after the HTTP 403 probe. Existing `get_product` already returns EAN.
-- [ ] Review documented contracts and examples against actual tool discovery and results. Check that shipped features claim only supported markets and that deferred features have a concrete reason.
-- [ ] Run `npm run typecheck`, `npm test`, `npm run test:package`, and `npm pack --dry-run`. Verify that the pack excludes APKs and research data. Run live smoke checks only for eligible public flows and record their outcomes separately from deterministic tests.
-- [ ] Record completed tasks, failed evidence gates, and the status of each proposed feature. Stop after recording the results.
+- [x] Record feeding tables (Hermes `#15680`, `#59200`) and autocomplete (`#15428`) as separate follow-ups. Feeding tables need a verified anonymous response and clear manufacturer attribution. Autocomplete needs an anonymous response shape and a client that benefits from suggestions. Record exact EAN lookup as unverified after the HTTP 403 probe. Existing `get_product` already returns EAN. [Follow-ups](../../investigation.md#apk-feature-follow-ups--2026-11-23)
+- [x] Review documented contracts and examples against actual tool discovery and results. Check that shipped features claim only supported markets and that deferred features have a concrete reason. Discovery exposes seven tools in SK and CZ and five in PL. The final review corrected the Bratislava Central ID formatting in the README and updated the design notes to reflect shipped tools and unit prices.
+- [x] Run `npm run typecheck`, `npm test`, `npm run test:package`, and `npm pack --dry-run`. Typecheck, all 139 deterministic tests, and the installed-package smoke passed. The dry run listed 13 entries containing runtime JavaScript, README, license, and package metadata. APKs and research data are excluded. All four eligible live calls passed. [Separate live results](../../investigation.md#apk-feature-release-smoke--2026-11-23)
+- [x] Record completed tasks, failed evidence gates, and the status of each proposed feature. Stop after recording the results.
+
+**Release status:** Tasks 1–4 and 6–8 are complete. The verified scope is ready for release, and the changelog entries remain under Unreleased.
+
+| Feature | Status |
+| --- | --- |
+| Product enrichment | Available through existing product, enriched search, and comparison results in SK, CZ, and PL. Optional values depend on the detail response. |
+| Nearest store | Available in SK and CZ with coordinates and up to one branch. PL, broader stock ID equivalence, caller distance, and pagination remain unverified. |
+| Category browsing and facets | Task 5 deferred. Anonymous navigation worked in SK and CZ. The SK filter descriptor and CZ product filter returned HTTP 500, leaving facets, product exclusions, and pagination unverified. |
+| Delivery quotes | Available in SK and CZ for one unit per quote, including supplied pickup places. PL and destination-specific availability remain unverified. Standalone pickup-place listing returned HTTP 401. The verified pickup-method catalog remains a follow-up. |
+| Feeding tables, autocomplete, exact EAN lookup | Follow-ups with separate evidence requirements. The exact EAN probe returned HTTP 403. |

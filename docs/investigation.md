@@ -173,6 +173,35 @@ Reduced SK response (selected fields):
 
 Each market returned one `nearestStore` with three `closestStores` entries and no pagination fields. The related list included the returned store at `0.0 Km` even when its reported coordinates differed from the request. The distance labels are in kilometers, and the observed zero indicates a branch-relative origin. The distance calculation and broader coverage remain unverified. These samples support a coordinate-only, single-branch lookup in SK and CZ. Independent branch-coordinate validation, caller-distance ranking, city filtering, and pagination remain open. The one exact Slovak stock ID match confirms equivalence for Bratislava Central. A broader stock join for either market needs more evidence. [Stock fixture](../test/fixtures/store-availability.json)
 
+## Anonymous category browsing — 2026-11-23
+
+### APK trace
+
+| Hermes references | Request and role |
+| --- | --- |
+| `#15658`, `#54438` | Storefront `GET /web-api/navigation/animal-category` returns `items`. The app passes an undefined user ID when the account is absent. |
+| `#15704`, `#38181` | Storefront `POST /web-api/products/parameter-filter/query` accepts a JSON object with `url`. The app passes an undefined user ID when the account is absent. The Czech response shows that this route resolves a URL into a filter request. |
+| `#15684`, `#57334` | Storefront `POST /web-api/products/parameter-filter` builds the facet view model. The app passes facets from a filter response and, for a category scope, `scope: { type: "category", categoryId: … }`. The call has no user ID argument. |
+| `#15708`, `#57406` | Storefront `POST /web-api/products/parameter-filter/animal` takes `animalId` and `categoryId`. The app passes an undefined user ID when the account is absent. This path was traced only. |
+| `#14779`, `#18191`, `#18346`, `#18348`, `#57334`, `#57359` | `POST /filter-products/{apiWebId}` on the separate parameter-filter service submits the filter body and has no user ID argument. The production package domain resolves to `parameter-filter.superzoo.cz`. The locale IDs are `superzoo_cz` and `superzoo_sk`. The app starts with `paging.page: 1`, sends `paging.limit`, and consumes `products`, `totalCount`, and `facets`. |
+
+The app maps parameter aliases and their allowed values into `query.parameters` (`#57067–#57070`, `#57379`, `#57382`). Concrete facet aliases and values, including life stage, still need a successful live response. The app's separate purchase eligibility helper checks `productSaleForbidden` and whether `disallowedPriceLevels` includes the active level (`#15023`). That check does not establish which products the parameter-filter service excludes.
+
+### Anonymous probes
+
+Five sequential HTTPS requests omitted user IDs, cookies, and credentials. Each had a 12-second deadline, zero retries, and no redirect following. Times are local to Europe/Bratislava.
+
+| Time | Market and request | Result |
+| --- | --- | --- |
+| 15:36:34 | SK GET `https://www.superzoo.sk/web-api/navigation/animal-category` | HTTP 200 JSON. Six groups. The `dogs` group's `Granuly pre psov` entry has ID `42eeee01-5544-4e68-8130-bef9755298ae` and alias `psy/krmivo-a-pochutky/granuly-pre-psy`. |
+| 15:36:34 | CZ GET `https://www.superzoo.cz/web-api/navigation/animal-category` | HTTP 200 JSON. Six groups. The `dogs` group's `Granule pro psy` entry has the same sampled ID and alias `psi/krmivo-granule/granule`. |
+| 15:37:27 | SK POST `https://www.superzoo.sk/web-api/products/parameter-filter/query` with the discovered alias wrapped in slashes as `url` | HTTP 500 JSON. Stopped probing this route. No Slovak filter request was established. |
+| 15:37:27 | CZ POST `https://www.superzoo.cz/web-api/products/parameter-filter/query` with the discovered alias wrapped in slashes as `url` | HTTP 200 JSON. Returned `scope.category: "c1955f56-7438-4c93-8875-9dc8f634acd9"`, which differs from the navigation ID and was absent from the captured navigation children. Returned `priceLevel: "1"`, `filters.onlyOnSale: true`, `paging: { limit: 15, page: 1 }`, and requested facet groups `parameters`, `prices`, `campaigns`, and `reviews`. |
+| 15:38:52 | CZ POST `https://parameter-filter.superzoo.cz/filter-products/superzoo_cz` with the Czech descriptor as returned | HTTP 500 JSON. Stopped probing this route before a facet or second-page request. |
+| — | PL | No probe. The APK trace did not establish the Polish route and market configuration for this flow. |
+
+Anonymous navigation is verified for SK and CZ. The relationship between navigation IDs and filter scope IDs remains unresolved. The CZ descriptor's sale-only setting and default price level are request inputs. Both product-level exclusion checks and pagination remain unverified. No market met the evidence gate for Task 5. Raw captures remain local.
+
 ## Anonymous product shipping quotes and pickup — 2026-11-23
 
 ### APK trace
@@ -201,3 +230,20 @@ Each quote returned `shippingOptions.shipment.items` and `shippingOptions.items`
 Entries in `personalPickups` carry `personalPickupId`, `name`, `isStore`, price, nullable method-level `deliveryDate`, and `places`. Sampled places had their own `pickupPlaceId`, parent `personalPickupId`, `name`, `isAvailable`, `deliveryDate`, and nullable `extraFee`. Store methods listed available places and had a null method-level date. Express delivery also appeared in this upstream group with `isStore: false`. Packeta and Zásilkovna parcel-point and locker methods returned empty `places` arrays despite quoting method-level prices and dates. The sample verifies associated store places for one product. Carrier point coverage, unavailable-place behavior, and the meaning of the observed store pickup times remain unverified.
 
 SK and CZ meet the Task 7 gate for a one-unit, market-level quote. The independent pickup-method catalog is a follow-up for localized method metadata. Standalone pickup-place listing remains unverified. Raw captures remain local.
+
+## APK feature follow-ups — 2026-11-23
+
+- **Feeding tables.** Hermes `#15680` reads a product-specific table, and `#59200` uses its `configuration` field. Verify an anonymous response per market and confirm how the source identifies the manufacturer before exposing feeding guidance.
+- **Autocomplete.** Hermes `#15428` calls a locale-specific search suggestion route. Verify the anonymous response shape per market and identify a client that would use suggestions as the shopper types.
+- **Exact EAN lookup.** The anonymous probe returned HTTP 403. Support remains unverified. `get_product` already returns `ean` when supplied for a known variant ID.
+
+## APK feature release smoke — 2026-11-23
+
+The live check called the two new MCP tools in SK and CZ with one sequential anonymous request per market and tool. Requests had a 12-second deadline, zero upstream retries, and redirect following disabled. The locator used public city-center coordinates. Delivery used one unit of public variant `294-101115`. Results validated against the published MCP success schemas.
+
+| Market | `find_stores` | `get_delivery_options` |
+| --- | --- | --- |
+| SK | HTTP 200, one branch | HTTP 200, two delivery methods, four pickup methods, 66 associated places across all pickup methods |
+| CZ | HTTP 200, one branch | HTTP 200, three delivery methods, four pickup methods, 296 associated places across all pickup methods |
+
+PL locator and delivery quotes remain unverified. Earlier APK review probes returned HTTP 403 on product detail routes, so this pass left those live routes closed. Product enrichment was checked against saved evidence and fixtures in the deterministic suite. The [release checklist](superpowers/plans/2026-11-23-apk-inspired-mcp-features.md#task-8--record-smaller-leads-and-verify-the-delivered-release) records the package gates and remaining evidence gaps.

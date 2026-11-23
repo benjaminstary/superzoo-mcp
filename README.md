@@ -131,7 +131,7 @@ get_delivery_options({ product_id: "294-101115" }) // SK or CZ
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 
-Use `get_product_availability` for stock. The saved Slovak evidence confirms that the locator and stock API use the same ID for Bratislava Central (`SKPIC-520)). Broader ID equivalence and caller distance remain unverified. [Store locator evidence](docs/investigation.md#anonymous-store-locator--2026-11-23)
+Use `get_product_availability` for stock. The saved Slovak evidence confirms that the locator and stock API use the same ID for Bratislava Central (`SKPIC-520`). Broader ID equivalence and caller distance remain unverified. [Store locator evidence](docs/investigation.md#anonymous-store-locator--2026-11-23)
 
 `get_delivery_options` accepts a variant-specific product ID and quotes one unit without a postal code. Results include `market`, `source`, `checked_at`, `product_id`, `delivery_methods`, and `pickup_methods`. Each method includes `method_id`, the localized `name`, nullable `price`, and nullable `delivery_date`. Prices include VAT and keep the upstream decimal string and currency. `is_price_from` preserves the home-delivery price qualifier. Dates retain their original offsets.
 

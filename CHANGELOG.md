@@ -10,12 +10,11 @@ Unreleased are merged but have not been included in a published release.
 - `get_delivery_options` quotes market-level shipping prices and dates for one
   unit of a product variant in Slovakia and Czechia, with any pickup places
   supplied by the quote.
-
 - `find_stores` accepts latitude and longitude and returns up to one branch
   selected by Super zoo in Slovakia and Czechia.
-- Product details, enriched search results, and comparisons include localized
-  attributes, ratings on the upstream scale, and supplied current and original
-  unit prices in the offer currency.
+- Product details, enriched search results, and comparisons in Slovakia,
+  Czechia, and Poland include localized attributes, ratings on the upstream
+  scale, and supplied current and original unit prices in the offer currency.
 
 ### Fixed
 
