@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { productInput, availabilityInput, findStoresInput } from './client.js';
+import { productInput, availabilityInput, findStoresInput, deliveryQuantitySchema } from './client.js';
 
 export type RequestContext = { signal?: AbortSignal };
 
@@ -112,6 +112,7 @@ export const deliveryOptionsResultSchema = z.object({
   ...provenance,
   market: market.exclude(['PL']),
   product_id: productId,
+  quantity: deliveryQuantitySchema,
   delivery_methods: z.array(z.object({
     ...quotedMethod,
     is_price_from: z.boolean().nullable(),

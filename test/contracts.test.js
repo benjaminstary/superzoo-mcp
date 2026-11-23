@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { SuperzooClient } from '../dist/client.js';
 import {
-  productResultSchema, availabilityResultSchema, searchResultSchema,
+  productResultSchema, availabilityResultSchema, searchResultSchema, deliveryOptionsResultSchema,
   productBatchInput, commonStoresInput, comparisonResultSchema, commonStoresResultSchema,
 } from '../dist/contracts.js';
 import { SuperzooError, toToolError } from '../dist/errors.js';
@@ -20,6 +20,17 @@ const failure = { code: 'upstream_unavailable', message: 'Upstream unavailable',
 const client = new SuperzooClient({ fetchImpl: async url => response(
   String(url).endsWith('/availability') ? stock : detail,
 ) });
+
+test('delivery result schema preserves the verified quantity and rejects invalid quantities', () => {
+  const result = { market: 'SK', source: 'https://logistics.superzoo.cz', checked_at: checkedAt,
+    product_id: productId, delivery_methods: [], pickup_methods: [] };
+  for (const quantity of [1, 2]) {
+    assert.deepEqual(deliveryOptionsResultSchema.parse({ ...result, quantity }), { ...result, quantity });
+  }
+  for (const quantity of [undefined, 0, 1.5, '2', 3]) {
+    assert.equal(deliveryOptionsResultSchema.safeParse({ ...result, quantity }).success, false);
+  }
+});
 
 // Rejecting existing payloads, dropping opaque upstream fields, or coercing prices breaks compatibility.
 test('product schema preserves actual client payloads and conditional decimal prices in every market', async () => {

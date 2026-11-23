@@ -19,6 +19,7 @@ test('MCP exposes seven read-only tools in Slovakia, validates input and returns
   assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'find_stores', 'get_delivery_options', 'get_product', 'get_product_availability', 'search_products']);
   assert.ok(tools.every(tool => tool.outputSchema?.type === 'object'));
   assert.ok(tools.find(tool => tool.name === 'search_products').inputSchema.properties.online_only);
+  assert.equal(tools.find(tool => tool.name === 'get_delivery_options').inputSchema.properties.quantity.maximum, 2);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint && !tool.annotations.destructiveHint));
   const result = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.equal(result.structuredContent.price.amount, '13.99');
@@ -83,13 +84,14 @@ test('MCP advertises the Czech locator and validates coordinates before the requ
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
 });
 
-test('MCP advertises Czech delivery quotes with a product-only input and structured results', async t => {
+test('MCP advertises optional quantity for Czech delivery quotes and returns it in structured results', async t => {
   const calls = [];
-  const product = { productId: '294-101115', quantity: 1 };
+  const product = { productId: '294-101115', quantity: 2 };
   const client = await connect(t, new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
-    calls.push(JSON.parse(options.body));
+    const request = JSON.parse(options.body);
+    calls.push(request);
     return new Response(JSON.stringify({ shippingOptions: {
-      shipment: { items: [product] }, items: [product], personalPickups: [],
+      shipment: { items: [request.product] }, items: [request.product], personalPickups: [],
       deliveryMethods: [{ deliveryMethodId: '23b3f7f3-17d6-4694-a5eb-9822de093d65', name: 'Zásilkovna domů',
         price: { amountIncVat: '99', currency: 'CZK' }, deliveryDate: '2026-11-24T16:00:00+01:00' }],
     } }));
@@ -98,18 +100,28 @@ test('MCP advertises Czech delivery quotes with a product-only input and structu
   const tool = tools.find(tool => tool.name === 'get_delivery_options');
   assert.ok(tool);
   assert.deepEqual(tool.inputSchema.required, ['product_id']);
-  assert.deepEqual(Object.keys(tool.inputSchema.properties), ['product_id']);
+  assert.equal(tool.inputSchema.properties.quantity.type, 'integer');
+  assert.equal(tool.inputSchema.properties.quantity.minimum, 1);
+  assert.equal(tool.inputSchema.properties.quantity.maximum, 2);
+  assert.equal(tool.inputSchema.properties.quantity.default, 1);
   assert.equal(tool.outputSchema.type, 'object');
   const args = { product_id: product.productId };
-  const bad = await client.callTool({ name: tool.name, arguments: { ...args, postal_code: '16000' } });
-  assert.equal(bad.isError, true);
+  for (const invalid of [{ postal_code: '16000' }, { quantity: 3 }]) {
+    const bad = await client.callTool({ name: tool.name, arguments: { ...args, ...invalid } });
+    assert.equal(bad.isError, true);
+  }
   assert.deepEqual(calls, []);
-  const result = await client.callTool({ name: tool.name, arguments: args });
+  const result = await client.callTool({ name: tool.name, arguments: { ...args, quantity: 2 } });
   assert.equal(result.isError, undefined);
   assert.deepEqual(calls, [{ webId: 'superzoo_cz', product }]);
   assert.equal(result.structuredContent.market, 'CZ');
+  assert.equal(result.structuredContent.quantity, 2);
   assert.deepEqual(result.structuredContent.delivery_methods[0].price, { amount: '99', currency: 'CZK' });
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+  const defaultQuote = await client.callTool({ name: tool.name, arguments: args });
+  assert.equal(defaultQuote.isError, undefined);
+  assert.deepEqual(calls[1], { webId: 'superzoo_cz', product: { ...product, quantity: 1 } });
+  assert.equal(defaultQuote.structuredContent.quantity, 1);
 });
 
 test('MCP leaves unverified Polish locator and delivery quotes out of discovery', async t => {

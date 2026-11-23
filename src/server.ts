@@ -68,7 +68,7 @@ export function createServer(client = new SuperzooClient()) {
   }
   if (client.market.deliveryQuoteWebId !== null) {
     server.registerTool('get_delivery_options', {
-      description: `Quote delivery for one unit of a product variant in ${name}. `
+      description: `Quote delivery for one or two units of a product variant in ${name}. Defaults to one unit. `
         + 'Returns market-level prices and dates plus pickup places supplied with each method. '
         + 'The quote has no address-specific availability or delivery commitment.',
       inputSchema: deliveryOptionsInput, outputSchema: deliveryOptionsResultSchema, annotations,

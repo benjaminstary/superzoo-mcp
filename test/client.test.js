@@ -180,7 +180,7 @@ test('delivery quote sends one unit anonymously and preserves prices, dates and 
   const { checked_at, ...result } = await client.getDeliveryOptions(quoteInput);
   assert.ok(Number.isFinite(Date.parse(checked_at)));
   assert.deepEqual(result, {
-    ...quoteInput, market: 'SK', source,
+    ...quoteInput, quantity: 1, market: 'SK', source,
     delivery_methods: [{ method_id: 'eed7a79d-1dc4-430f-bccd-ca291c8caaef',
       name: 'Packeta – Doručenie na adresu', price: { amount: '3.99', currency: 'EUR' },
       delivery_date: deliveryDate, is_price_from: false }],
@@ -193,6 +193,30 @@ test('delivery quote sends one unit anonymously and preserves prices, dates and 
         price: { amount: '2.99', currency: 'EUR' }, delivery_date: deliveryDate, places: [] },
     ],
   });
+});
+
+test('delivery quote sends two units and reports the verified quantity', async () => {
+  const product = { ...quoteItem, quantity: 2 };
+  const client = clientWith(async (url, options) => {
+    assert.deepEqual(JSON.parse(options.body), { webId: 'superzoo_sk', product });
+    return response(shippingQuote({ shipment: { items: [product] }, items: undefined }));
+  });
+  const result = await client.getDeliveryOptions({ ...quoteInput, quantity: 2 });
+  assert.equal(result.product_id, product.productId);
+  assert.equal(result.quantity, 2);
+});
+
+test('delivery quote rejects a mismatched or extra echoed item for two units', async () => {
+  const product = { ...quoteItem, quantity: 2 };
+  for (const items of [[quoteItem], [{ ...product, productId: 'different' }], [product, product]]) {
+    for (const options of [
+      { shipment: { items }, items: [product] },
+      { shipment: { items: [product] }, items },
+    ]) {
+      const client = clientWith(async () => response(shippingQuote(options)));
+      await assert.rejects(client.getDeliveryOptions({ ...quoteInput, quantity: 2 }), { code: 'invalid_response' });
+    }
+  }
 });
 
 test('delivery quote keeps unknown optional fields nullable and preserves explicit false and zero', async () => {
@@ -243,8 +267,12 @@ test('delivery quote rejects invalid input, unsupported markets, and cancellatio
   for (const input of [{}, { product_id: '../product' }, { ...quoteInput, postal_code: '81101' }]) {
     await assert.rejects(client.getDeliveryOptions(input), { name: 'ZodError' });
   }
+  for (const quantity of [0, 1.5, '2', 3]) {
+    await assert.rejects(client.getDeliveryOptions({ ...quoteInput, quantity }), { name: 'ZodError' });
+  }
   const unsupported = new SuperzooClient({ country: 'PL', fetchImpl });
   await assert.rejects(unsupported.getDeliveryOptions(quoteInput), { code: 'not_found' });
+  await assert.rejects(unsupported.getDeliveryOptions({ ...quoteInput, quantity: 2 }), { code: 'not_found' });
   await assert.rejects(client.getDeliveryOptions(quoteInput, { signal: AbortSignal.abort() }), { code: 'cancelled' });
 });
 

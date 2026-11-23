@@ -25,7 +25,11 @@ function compareDecimals(left: string, right: string): number {
 }
 
 export const productInput = z.object({ product_id: idSchema });
-export const deliveryOptionsInput = z.strictObject(productInput.shape);
+export const deliveryQuantitySchema = z.number().int().min(1).max(2);
+export const deliveryOptionsInput = z.strictObject({
+  ...productInput.shape,
+  quantity: deliveryQuantitySchema.default(1),
+});
 export const searchInput = z.object({
   query: z.string().trim().min(1).max(200),
   limit: z.number().int().min(1).max(50).default(10),
@@ -116,7 +120,7 @@ const quoteMethod = {
   price: quotePrice,
   deliveryDate: quoteDate,
 };
-const quotedItems = z.tuple([z.object({ productId: idSchema, quantity: z.literal(1) })]);
+const quotedItems = z.tuple([z.object({ productId: idSchema, quantity: deliveryQuantitySchema })]);
 const deliveryQuoteSchema = z.object({
   shippingOptions: z.object({
     shipment: z.object({ items: quotedItems }),
@@ -333,23 +337,26 @@ export class SuperzooClient {
   }
 
   async getDeliveryOptions(input: z.input<typeof deliveryOptionsInput>, requestContext: RequestContext = {}): Promise<DeliveryOptionsResult> {
-    const { product_id } = deliveryOptionsInput.parse(input);
+    const { product_id, quantity } = deliveryOptionsInput.parse(input);
     const market = this.market;
     if (market.deliveryQuoteWebId === null) {
       throw new SuperzooError('not_found', `Delivery quotes are not supported in ${market.name}`);
     }
     const { data, checked_at } = await this.policy.request({
       market: market.country, operation: 'delivery_quote', url: DELIVERY_QUOTE,
-      schema: deliveryQuoteSchema.refine(({ shippingOptions }) =>
-        shippingOptions.shipment.items[0].productId === product_id &&
-        (shippingOptions.items === undefined || shippingOptions.items[0].productId === product_id)),
+      schema: deliveryQuoteSchema.refine(({ shippingOptions }) => {
+        const [shipmentItem] = shippingOptions.shipment.items;
+        const quoteItem = shippingOptions.items?.[0];
+        return shipmentItem.productId === product_id && shipmentItem.quantity === quantity &&
+          (quoteItem === undefined || (quoteItem.productId === product_id && quoteItem.quantity === quantity));
+      }),
       init: { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ webId: market.deliveryQuoteWebId, product: { productId: product_id, quantity: 1 } }) },
+        body: JSON.stringify({ webId: market.deliveryQuoteWebId, product: { productId: product_id, quantity } }) },
       ...requestContext,
     });
     const { deliveryMethods, personalPickups } = data.shippingOptions;
     return {
-      market: market.country, source: DELIVERY_QUOTE, checked_at, product_id,
+      market: market.country, source: DELIVERY_QUOTE, checked_at, product_id, quantity,
       delivery_methods: deliveryMethods.map(method => ({
         method_id: method.deliveryMethodId, name: method.name, price: publicQuotePrice(market, method.price),
         delivery_date: method.deliveryDate ?? null, is_price_from: method.isPriceFrom ?? null,

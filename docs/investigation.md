@@ -231,6 +231,19 @@ Entries in `personalPickups` carry `personalPickupId`, `name`, `isStore`, price,
 
 SK and CZ meet the Task 7 gate for a one-unit, market-level quote. The independent pickup-method catalog is a follow-up for localized method metadata. Standalone pickup-place listing remains unverified. Raw captures remain local.
 
+## Two-unit delivery quotes — 2026-11-23
+
+Two sequential anonymous requests to the same logistics quote endpoint used `productId: "294-101115"`, `quantity: 2`, and the configured market web IDs. Each request had a 12-second deadline, blocked redirects, and omitted credentials. Both returned HTTP 200. Both `shippingOptions.shipment.items` and `shippingOptions.items` contained exactly one entry with the requested variant ID and quantity.
+
+| Time (Europe/Bratislava) | Market | Home delivery example (including VAT) | Pickup observations |
+| --- | --- | --- | --- |
+| 22:13:06 | SK (`superzoo_sk`) | Packeta home delivery quoted `3.99 EUR`, `isPriceFrom: false`, and `2026-11-26T10:00:00+01:00`. Two home-delivery methods and four pickup-method records. | Store pickup listed 42 places and express listed 22, all marked available. Packeta parcel points and Z-BOX had empty place lists and still supplied method prices and dates. |
+| 22:13:06 | CZ (`superzoo_cz`) | Zásilkovna home delivery quoted `99 CZK`, `isPriceFrom: false`, and `2026-11-25T13:00:00+01:00`. Three home-delivery methods and four pickup-method records. | Store pickup listed 204 places and express listed 90, all marked available. Zásilkovna parcel points and Z-Box had empty place lists and still supplied method prices and dates. |
+
+Store pickup and express records had null method-level dates and dated individual places. Both responses distinguish empty place lists from priced, dated methods. Neither sample contained an explicitly unavailable place or an empty method list, so those cases remain unverified live. The sampled home-delivery prices matched the earlier one-unit quotes. The echoed quantities confirm what the API quoted.
+
+SK and CZ pass the Task 1 gate for quantities `1` and `2` of one variant. The initial implementation bound is `2`. Higher quantities and PL remain unverified.
+
 ## APK feature follow-ups — 2026-11-23
 
 - **Feeding tables.** Hermes `#15680` reads a product-specific table, and `#59200` uses its `configuration` field. Verify an anonymous response per market and confirm how the source identifies the manufacturer before exposing feeding guidance.

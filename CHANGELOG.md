@@ -5,6 +5,11 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+### Changed
+
+- `get_delivery_options` accepts an optional `quantity` of 1 or 2 in Slovakia
+  and Czechia and reports the quantity in the quote. The default is 1.
+
 ## [0.3.0] - 2026-11-23
 
 ### Added
