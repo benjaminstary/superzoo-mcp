@@ -43,7 +43,9 @@ test('HTTP initializes and calls all tools without a bearer token; concurrent cl
     t.after(() => client.close());
     await client.connect(new StreamableHTTPClientTransport(url));
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 7);
+    assert.equal(tools.tools.length, 9);
+    assert.ok(tools.tools.some(tool => tool.name === 'list_product_categories'));
+    assert.ok(tools.tools.some(tool => tool.name === 'browse_products'));
     assert.match(tools.tools.find(x => x.name === 'get_product').description, /CZK/);
     const product = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
     assert.equal(product.structuredContent.market, 'CZ');

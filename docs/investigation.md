@@ -202,6 +202,104 @@ Five sequential HTTPS requests omitted user IDs, cookies, and credentials. Each 
 
 Anonymous navigation is verified for SK and CZ. The relationship between navigation IDs and filter scope IDs remains unresolved. The CZ descriptor's sale-only setting and default price level are request inputs. Both product-level exclusion checks and pagination remain unverified. No market met the evidence gate for Task 5. Raw captures remain local.
 
+### Category filter recheck — 2026-11-23
+
+The repository evidence and public searches for the two filter routes and their OpenAPI or Swagger documentation yielded no new route contract, verified app request, or recovery evidence. Super zoo's Czech help centre describes pet-profile filtering in selected categories. That guidance covers the app experience and provides no anonymous request contract. [Super zoo filtering help](https://www.superzoo.cz/jak-funguje-filtrovani-produktu-pro-meho-mazlicka/)
+
+The previous SK descriptor and CZ product filter calls each returned HTTP 500. Neither call was repeated. Anonymous facet values, product identity and exclusions, and result coverage still need verification in one market before category browsing can proceed.
+
+### APK request construction — 2026-11-23
+
+REA identified the checked local Super zoo 2.0.13 XAPK and its split packages in artifact manifest `agm_ff9638962bc438ade370408a673e12af5c61703aa00c314ca3d94dae972a5494`. The base APK's `assets/index.android.bundle` matched the saved Hermes bytecode by SHA-256. A focused Hermes disassembly traced request construction without running the app.
+
+- `#57321`, `#57331`, `#57378`, `#57379`, and `#57386` show the app building a new filter body from defaults, a supplied scope, and selected values. The factory starts with the current shop price level, merges query fields, sets sale filters and facet groups, and applies sorting. `#57334` then sets paging before `#57359` posts the body. The earlier CZ probe forwarded the storefront descriptor verbatim, so it did not verify this request path.
+- `#57382–#57385` show selected parameters serialized as `query.parameters` entries with `alias` and `values`. `#57334–#57335` read `products[].id`, `totalCount`, and `facets` from the filter service. These bytecode references establish the fields the app expects. Concrete category facet values and returned product eligibility still require live verification.
+
+The request factory gives a concrete lead for the next live check. A successful signed-out category filter request and response would establish the exact body and whether the service accepts it today. The APK does not establish the cause of the previous HTTP 500s.
+
+### Verified Czech dog-food category filter — 2026-11-23
+
+The APK's alias router resolves a navigation alias through the read-model `route` collection and passes `route.settings.resourceId` to the category screen (`#36724`, `#36729`, `#36734–#36737`, `#31326`). The category screen uses that resource ID as `scope.category` (`#57452`, `#57456`). ADB ran but listed no devices, and no emulator was configured. The live results below are anonymous requests reconstructed from the APK trace.
+
+Four HTTPS requests ran sequentially with a 12-second deadline each, no retries or redirects, and no credentials or cookies.
+
+| Request | Result |
+| --- | --- |
+| `POST https://read-model.superzoo.cz/collections/route/webs/superzoo_cz/languages/cs/documents/filter` with `{"ids":["psi/krmivo-granule/granule"]}` | HTTP 200. The exact alias resolved to a category with resource ID `c1955f56-7438-4c93-8875-9dc8f634acd9`. Its navigation entry ID is `42eeee01-5544-4e68-8130-bef9755298ae`. |
+| `POST https://parameter-filter.superzoo.cz/filter-products/superzoo_cz` using the reconstructed first-page body below | HTTP 200. Returned 10 distinct product IDs, `totalCount: 784`, and the `stari-psa` dog age facet. The advertised values were `dospely` (531), `senior` (222), and `stene` (211). A product can have multiple values. |
+| Same filter request with `query.parameters: [{ "alias": "stari-psa", "values": ["senior"] }]` | HTTP 200. Returned 10 distinct product IDs and `totalCount: 222`, matching the unfiltered facet count for `senior`. All 10 joined product records had the `senior` value. |
+| `POST https://read-model.superzoo.cz/collections/product/webs/superzoo_cz/languages/cs/documents/filter` with `{"ids":[...]}` for the 19 distinct IDs from both pages | HTTP 200. All 19 IDs matched `items[].product.productId`. Every product was published, explicitly had `productSaleForbidden: false` and `disallowedPriceLevels: []`, and had a price record for that exact product ID, web ID `superzoo_cz`, and level `"1"`. |
+
+The first-page body includes all six facet groups, an empty query, and no explicit sort, following the category factory defaults (`#57321`, `#57331`, `#57334`, `#57370`, `#57376`, `#57378–#57379`). The earlier Czech descriptor included a different facet list, empty query arrays, and an explicit sort. The successful request verifies the new body as a whole.
+
+```json
+{
+  "priceLevel": "1",
+  "scope": { "category": "c1955f56-7438-4c93-8875-9dc8f634acd9" },
+  "filters": { "onlyOnSale": true, "onlyInStock": false, "promotedOnly": false },
+  "facets": ["brands", "parameters", "campaigns", "categories", "reviews", "prices"],
+  "query": {},
+  "paging": { "page": 1, "limit": 10 }
+}
+```
+
+Reduced fixture for the unfiltered response and one matching filtered product record:
+
+```json
+{
+  "unfiltered": {
+    "products": [{ "id": "294-170827" }],
+    "totalCount": 784,
+    "facets": {
+      "parameters": [{
+        "id": "d443960a-8817-4dfb-b453-5ea7d928ab28",
+        "alias": "stari-psa",
+        "values": [
+          { "value": "dospely", "increment": false, "count": 531 },
+          { "value": "senior", "increment": false, "count": 222 },
+          { "value": "stene", "increment": false, "count": 211 }
+        ]
+      }]
+    }
+  },
+  "filtered": { "products": [{ "id": "294-170845" }], "totalCount": 222 },
+  "productReadModel": {
+    "items": [{
+      "product": {
+        "productId": "294-170845",
+        "name": "Brit Premium by Nature Sensitive Lamb 15kg",
+        "published": true,
+        "productSaleForbidden": false,
+        "disallowedPriceLevels": []
+      },
+      "parameters": [{
+        "parameter": { "alias": "stari-psa" },
+        "values": [{ "alias": "dospely" }, { "alias": "senior" }]
+      }],
+      "prices": [{ "productId": "294-170845", "webId": "superzoo_cz", "priceLevelId": "1" }]
+    }]
+  }
+}
+```
+
+The Czech category meets the evidence gate for first-page browsing with the dog age facet. Use the product read model to enforce eligibility before returning each result. The app's helper checks the forbidden flag, the level blocklist, and price presence (`#15023–#15024`). The sample contained no restricted products, so upstream exclusion behavior remains unknown and needs explicit negative cases in the implementation tests. Report the upstream total separately from the number of eligible products returned. Pagination, additional categories, SK, and PL remain unverified. Raw captures remain local.
+
+### Slovak dry dog food category filter — 2026-11-23
+
+Four sequential anonymous requests used a 12-second deadline each, with redirects and retries disabled. The Slovak route lookup used `superzoo_sk`, language `sk`, and alias `psy/krmivo-a-pochutky/granuly-pre-psy`. It returned HTTP 200 and resolved the navigation entry `42eeee01-5544-4e68-8130-bef9755298ae` to scope `c1955f56-7438-4c93-8875-9dc8f634acd9`.
+
+The APK-shaped request above returned HTTP 200 at `https://parameter-filter.superzoo.cz/filter-products/superzoo_sk` with `priceLevel: "22"` and the resolved scope. The unfiltered first page contained 10 of 924 matches. It advertised dog-age facet `vek-psa` with `dospely` (545), `senior` (238), and `stena` (222). Setting `query.parameters` to `[{ "alias": "vek-psa", "values": ["senior"] }]` returned HTTP 200 with 10 of 238 matches.
+
+The Slovak product read model batch returned HTTP 200 and joined all 20 distinct IDs from the two pages. All were published, explicitly allowed for sale, and had a price for the same product, Slovak web ID, and level `"22"`. None blocked level `"22"`. All 10 filtered products carried `vek-psa=senior`. This verifies the Slovak category and first-page filter contract. The MCP exposes this category and facet in Slovakia. Raw captures remain local.
+
+### Broader category browsing — 2026-11-23
+
+Saved SK and CZ navigation responses list wet dog food, dry cat food, and cat litter. Saved dry dog food filter responses advertise `vek-psa=senior` and `alergie-psa=bez-obilnin-grain-free` in SK and `stari-psa=senior` and `alergie=bez-obilovin-grain-free-1` in CZ. These values are candidates for a combined filter on dry dog food.
+
+An anonymous POST to `https://read-model.superzoo.cz/collections/route/webs/superzoo_sk/languages/sk/documents/filter` requested the three additional SK category aliases in one `ids` batch. It returned HTTP 403 with a 12-second timeout configured and redirects disabled. The run stopped at that response. Additional scope resolution, combined-filter matches, page order and overlap, final-page behavior, and product eligibility on those pages remain unverified.
+
+A follow-up used the app's single-alias lookup for `macky/podstielky` (cat litter). It returned HTTP 200. The exact route had category template `productCatalogue:category:CATEGORY` and scope `19291e00-26e0-464b-bd6a-b804296ffb14`, distinct from navigation ID `dfc861d8-9069-47db-b29b-5d6afee06f1f`. The first unfiltered page request to `https://parameter-filter.superzoo.cz/filter-products/superzoo_sk` used that scope, price level `22`, and a limit of ten. It returned HTTP 403. Both requests were anonymous, with a 12-second timeout, no redirects, and no retries. The run stopped at the filter response. Cat litter facets and products remain unverified.
+
 ## Anonymous product shipping quotes and pickup — 2026-11-23
 
 ### APK trace
@@ -250,6 +348,18 @@ SK and CZ pass the Task 1 gate for quantities `1` and `2` of one variant. The in
 - **Autocomplete.** Hermes `#15428` calls a locale-specific search suggestion route. Verify the anonymous response shape per market and identify a client that would use suggestions as the shopper types.
 - **Exact EAN lookup.** The anonymous probe returned HTTP 403. Support remains unverified. `get_product` already returns `ean` when supplied for a known variant ID.
 
+### Exact barcode lookup verification
+
+The Super zoo 2.0.13 scanner builds a filter with the scanned `ean` and `published: true` (`#40542`). It passes that filter to the product read-model repository (`#40548`, `#40551`), whose `getFiltered` method uses `POST /collections/product/webs/{webId}/languages/{language}/documents/filter` (`#31317`, `#31326`). The earlier anonymous exact EAN probe returned HTTP 403. This review used saved bytecode and sent no new requests. Exact variant matching, no-match behavior, and anonymous market coverage remain unverified. `get_product` can still return the barcode when the variant ID is known.
+
+### Feeding table verification — 2026-11-23
+
+Saved Hermes disassembly from Super zoo 2.0.13 ties the storefront `/web-api` base (`#14779`) to `GET /products/{productId}/feeding-tables` (`#14895`, `#15669`, `#15680`). The caller passes a user ID when present and reads `configuration` from the result (`#59200`).
+
+Four sequential GET requests used `www.superzoo.sk` and `www.superzoo.cz`, with a 12-second deadline per request, zero retries, and redirects disabled. They omitted the `userId` query parameter, credentials, and cookies. All returned HTTP 200 JSON. In both markets, public variant `294-170845` (Brit Premium by Nature Sensitive Lamb 15 kg in the saved CZ product read model) returned a table. Variant `294-101115` returned `{"configuration":null}`.
+
+The table has one axis headed `Váha psa v dospelosti` in SK and `Váha psa v dospělosti` in CZ, with 12 weight labels from `5 kg` to `90 kg`. Each `values` row references its weight label by column ID. Both markets returned a default labelled `75 g`, and the `5 kg`, `10 kg`, and `90 kg` rows carried numeric `dailyDosage` values of `75`, `120`, and `630`. Individual rows carry no dosage unit field. The response has no echoed variant ID, manufacturer, or attribution for the table. The request path supplies the variant ID, and the saved brand ID identifies the product brand. Manufacturer authorship and row-level unit semantics remain unverified. This leaves the manufacturer feeding table tool blocked. Raw captures remain local.
+
 ## APK feature release smoke — 2026-11-23
 
 The live check called the two new MCP tools in SK and CZ with one sequential anonymous request per market and tool. Requests had a 12-second deadline, zero upstream retries, and redirect following disabled. The locator used public city-center coordinates. Delivery used one unit of public variant `294-101115`. Results validated against the published MCP success schemas.
@@ -260,3 +370,16 @@ The live check called the two new MCP tools in SK and CZ with one sequential ano
 | CZ | HTTP 200, one branch | HTTP 200, three delivery methods, four pickup methods, 296 associated places across all pickup methods |
 
 PL locator and delivery quotes remain unverified. Earlier APK review probes returned HTTP 403 on product detail routes, so this pass left those live routes closed. Product enrichment was checked against saved evidence and fixtures in the deterministic suite. The [release checklist](superpowers/plans/2026-11-23-apk-inspired-mcp-features.md#task-8--record-smaller-leads-and-verify-the-delivered-release) records the package gates and remaining evidence gaps.
+
+## Shopping follow-up release check — 2026-11-23
+
+The README examples and Unreleased changelog match the tested contracts. SK and CZ advertise delivery quotes with a one-unit default and a two-unit maximum, plus category tools for the first page of dry dog food with the local dog-age facet. The tests cover the omitted quantity and the structured result. PL discovery excludes the quote and category tools.
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed. |
+| `npm test` | 149 passed with localhost access for HTTP transport tests. |
+| `npm run test:package` | 1 passed. The packed npm package installed and served MCP through its executable. |
+| `npm pack --dry-run` | 13 files, including the compiled runtime and entry point, `package.json`, `README.md`, and `LICENSE`. |
+
+Live evidence came from the earlier [one-unit quotes](#anonymous-product-shipping-quotes-and-pickup--2026-11-23), [two-unit quotes](#two-unit-delivery-quotes--2026-11-23), and first-page category probes in [SK](#slovak-dry-dog-food-category-filter--2026-11-23) and [CZ](#verified-czech-dog-food-category-filter--2026-11-23). This release check used fixtures for upstream calls. Manufacturer feeding tables remain blocked on attribution, exact barcode lookup remains deferred after HTTP 403, and broader browsing remains blocked on live category evidence.

@@ -8,7 +8,7 @@
 
 **Tech stack:** Node.js 22+, TypeScript, native `fetch`, Zod, MCP SDK, and `node:test`.
 
-**Spec and evidence:** [Current tool contracts](../../../README.md#tools), [shipping quote findings](../../investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23), [deferred category browsing task](2026-11-23-apk-inspired-mcp-features.md#task-5--implement-verified-category-browsing), and [feeding table and EAN findings](../../investigation.md#apk-feature-follow-ups--2026-11-23).
+**Spec and evidence:** [Current tool contracts](../../../README.md#tools), [shipping quote findings](../../investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23), [category browsing task](2026-11-23-apk-inspired-mcp-features.md#task-5--implement-verified-category-browsing), and [feeding table and EAN findings](../../investigation.md#apk-feature-follow-ups--2026-11-23).
 
 ## Global constraints
 
@@ -63,18 +63,30 @@
 
 **Files:** `docs/investigation.md`, this plan, and the existing category plan if the gate opens.
 
-- [ ] Review the prior SK descriptor and CZ filter failures. Record new route documentation, a newly verified app request, or upstream recovery evidence before repeating either failed call. If no new evidence exists, leave the prior task deferred and stop.
-- [ ] In one candidate market, trace a navigation entry through its filter scope. Verify discovery of one category facet and its allowed values. Capture one successful unfiltered and one successful filtered response using that value. Check product identity, price-level restrictions, forbidden-product handling, and returned coverage.
-- [ ] Record the market, category ID mapping, facet contract, and reduced fixture. Keep pagination deferred unless a second-page request establishes it. Open Task 4 only if the category, facet, and eligibility checks pass in the same market.
+- [x] Review the prior SK descriptor and CZ filter failures. Record new route documentation, a newly verified app request, or upstream recovery evidence before repeating either failed call. If no new evidence exists, leave the prior task deferred and stop.
+- [x] In one candidate market, trace a navigation entry through its filter scope. Verify discovery of one category facet and its allowed values. Capture one successful unfiltered and one successful filtered response using that value. Check product identity, price-level restrictions, forbidden-product handling, and returned coverage.
+- [x] Record the market, category ID mapping, facet contract, and reduced fixture. Keep pagination deferred unless a second-page request establishes it. Open Task 4 only if the category, facet, and eligibility checks pass in the same market.
+
+**Result:** Complete. The anonymous Czech route lookup resolved the dog-food category scope. The APK-shaped request returned 784 matches. Applying `stari-psa=senior` returned 222, and all 10 first-page products carried that value. Both pages joined to 19 distinct published products with explicit sale restrictions and Czech level-1 prices. Task 4 can start with this category and facet. [Live evidence and reduced fixture](../../investigation.md#verified-czech-dog-food-category-filter--2026-11-23)
 
 ## Task 4 — Ship verified category browsing
 
 **Files and interface:** Reuse [Task 5 of the APK plan](2026-11-23-apk-inspired-mcp-features.md#task-5--implement-verified-category-browsing). Start with `list_product_categories({})` and `browse_products({ category_id, facets? })`. Publish the verified facet keys and allowed values with their category. Initial browsing returns the first verified page with explicit coverage.
 
-- [ ] Run the linked task's test-first implementation and verification steps for the supported market. Include a test that forwards the verified filter scope ID when it differs from the navigation ID, and a test that an unknown facet value triggers no request.
-- [ ] Record the market and supported facets in the README and Unreleased changelog. Update both plans with the result.
+**Verified scope:** Czech `Granule pro psy`, facet `stari-psa` with `dospely`, `senior`, and `stene` advertised. Use the product read model to verify identity, publication, sale restrictions, and level-1 price presence. Treat the upstream total as pre-validation coverage. [Request and response evidence](../../investigation.md#verified-czech-dog-food-category-filter--2026-11-23)
+
+- [x] Run the linked task's test-first implementation and verification steps for the supported market. Include a test that forwards the verified filter scope ID when it differs from the navigation ID, and a test that an unknown facet value triggers no request.
+- [x] Record the market and supported facets in the README and Unreleased changelog. Update both plans with the result.
+
+**Result:** Complete. Czech discovery returns the verified category and dog-age values from configuration. Browsing validates the first page and returns eligible summaries in filter order, with an upstream total and separate page counts. Missing, mismatched, and duplicate joined records yield `invalid_response`. Six new tests failed before implementation. All 76 focused tests, all 148 suite tests, and typecheck passed. Offline replay returned 10 eligible products from each saved Czech page, with upstream totals of 784 unfiltered and 222 for `senior`.
+
+- [x] Extend the same tools to Slovakia after verifying its category, facet, and local price eligibility. Both saved Slovak pages returned 10 eligible summaries in replay, with upstream totals of 924 unfiltered and 238 for `senior`. Both Czech replays, typecheck, 149 suite tests, and the installed-package smoke test passed. [Slovak evidence](../../investigation.md#slovak-dry-dog-food-category-filter--2026-11-23)
+
+**Current coverage:** Dry dog food in SK and CZ, one dog-age facet per market, and up to ten candidates from the first page. The tools support a shortlist. Broader category and facet coverage and paging are tracked in [Task 8](#task-8--verify-broader-category-browsing).
 
 ## Task 5 — Verify and expose manufacturer feeding tables
+
+**Status:** Blocked on manufacturer attribution. Anonymous SK and CZ requests returned a table for one variant and an explicit null for another. The table response identifies the variant through the request path and omits the manufacturer and table provenance. [Probe notes](../../investigation.md#feeding-table-verification--2026-11-23)
 
 **Files:** `docs/investigation.md`, this plan, and the shared client, contract, server, test, and user-facing files if verified.
 
@@ -84,6 +96,8 @@
 - [ ] Implement the tool through the shared client and request policy. Return published guidance without extrapolating quantities. Rerun the focused tests and typecheck. Update the README and Unreleased changelog.
 
 ## Task 6 — Verify and expose exact barcode lookup
+
+**Status:** Blocked on anonymous access. The saved APK trace identifies the product read-model filter used by the scanner. The earlier anonymous exact EAN probe returned HTTP 403, and this review found no alternate route for an exact lookup. [Investigation notes](../../investigation.md#exact-barcode-lookup-verification)
 
 **Files:** `docs/investigation.md`, this plan, and the shared client, contract, server, test, and user-facing files if verified.
 
@@ -97,5 +111,15 @@
 
 **Files:** This plan, `docs/investigation.md`, `README.md`, `CHANGELOG.md`.
 
-- [ ] For any implemented feature, check tool discovery, output schemas, and docs in all three markets. Confirm single-unit examples still work and record any features deferred by upstream behavior.
-- [ ] Run `npm run typecheck`, `npm test`, `npm run test:package`, and `npm pack --dry-run`. Confirm the package contains the runtime, metadata, README, and license. Record command results and any separate live verification.
+- [x] For any implemented feature, check tool discovery, output schemas, and docs in all three markets. Confirm single-unit examples still work and record any features deferred by upstream behavior.
+- [x] Run `npm run typecheck`, `npm test`, `npm run test:package`, and `npm pack --dry-run`. Confirm the package contains the runtime, metadata, README, and license. Record command results and any separate live verification.
+
+**Result:** Typecheck passed, all 149 tests passed, the packed consumer executable passed its install and MCP smoke test, and the npm dry run listed 13 files. The release gate covers two-unit delivery quotes and first-page dry dog food browsing in SK and CZ. PL tool discovery excludes both features. [Verification record](../../investigation.md#shopping-follow-up-release-check--2026-11-23)
+
+## Task 8 — Verify broader category browsing
+
+**Status:** Blocked on live filter access. A single-alias lookup resolved the Slovak cat litter scope after the earlier route batch returned HTTP 403. The first filter request for that scope returned HTTP 403. Additional category facets, combined filtering, and paging still need live verification. [Probe notes](../../investigation.md#broader-category-browsing--2026-11-23)
+
+- [ ] Trace navigation-to-scope resolution for several additional categories and verify which facet keys and values each category exposes. Verify a representative combined filter where a category exposes multiple facets.
+- [ ] Verify a second page with the same category, filters, and sort. Check product ordering, overlap between pages, eligibility checks, and how the upstream API signals the final page.
+- [ ] Record the verified markets, categories, facet discovery behavior, and paging limits. Use that evidence to scope an implementation of broader browsing through the existing tools.

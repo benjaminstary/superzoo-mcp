@@ -110,6 +110,8 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
 | `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
 | `get_delivery_options` (SK, CZ) | `product_id`, optional `quantity` (1 or 2, default 1) | Market-level shipping quote, including prices, dates, and pickup places supplied with each method |
+| `list_product_categories` (SK, CZ) | None | Supported category IDs, names, and allowed facet values |
+| `browse_products` (SK, CZ) | `category_id`, optional `facets` | First-page product summaries with sale eligibility checks and coverage counts |
 
 Example workflow:
 
@@ -127,7 +129,19 @@ compare_products({ product_ids: ["294-101115", "294-172197"] })
 find_common_stores({ product_ids: ["294-101115", "294-172197"], city: "Bratislava" })
 find_stores({ latitude: 48.15, longitude: 17.11 }) // SK, near central Bratislava
 get_delivery_options({ product_id: "294-101115", quantity: 2 }) // SK or CZ
+list_product_categories({}) // SK or CZ
+browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: { "vek-psa": "senior" } }) // SK
+browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: { "stari-psa": "senior" } }) // CZ
 ```
+
+`list_product_categories` returns the supported dry dog food category and its dog-age facet. Pass one value from your market or omit `facets` to browse without an age filter.
+
+| Market | Category | Dog-age facet | Values |
+| --- | --- | --- | --- |
+| SK | Granuly pre psov | `vek-psa` | `dospely`, `senior`, `stena` |
+| CZ | Granule pro psy | `stari-psa` | `dospely`, `senior`, `stene` |
+
+`browse_products` checks up to ten first-page matches for publication, sale restrictions, and a public price-level record for the selected market. It returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 

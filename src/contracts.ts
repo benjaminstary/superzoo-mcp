@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { productInput, availabilityInput, findStoresInput, deliveryQuantitySchema } from './client.js';
+import { productInput, availabilityInput, findStoresInput, deliveryQuantitySchema, browseProductsInputs } from './client.js';
 
 export type RequestContext = { signal?: AbortSignal };
 
@@ -13,6 +13,39 @@ const decimal = decimalText.nullable();
 const nonBlankText = z.string().regex(/\S/);
 const count = z.number().int().nonnegative();
 const provenance = { source: z.string(), market, checked_at: timestamp };
+
+const categoryId = browseProductsInputs.CZ.shape.category_id;
+const categoryMarket = z.enum(['CZ', 'SK']);
+const czechCategoryFacets = browseProductsInputs.CZ.shape.facets.unwrap();
+const slovakCategoryFacets = browseProductsInputs.SK.shape.facets.unwrap();
+const dogAge = z.union([czechCategoryFacets.shape['stari-psa'].unwrap(), slovakCategoryFacets.shape['vek-psa'].unwrap()]);
+
+export const listProductCategoriesResultSchema = z.object({
+  market: categoryMarket,
+  categories: z.array(z.object({
+    category_id: categoryId,
+    name: nonBlankText,
+    facets: z.array(z.object({
+      key: z.enum(['stari-psa', 'vek-psa']),
+      values: z.array(dogAge),
+    })),
+  })),
+});
+export type ListProductCategoriesResult = z.output<typeof listProductCategoriesResultSchema>;
+
+export const browseProductsResultSchema = z.object({
+  ...provenance,
+  market: categoryMarket,
+  category_id: categoryId,
+  facets_applied: z.union([czechCategoryFacets, slovakCategoryFacets]),
+  coverage: z.literal('first_page'),
+  upstream_total_count: count,
+  candidates_checked: count,
+  eligible_count: count,
+  product_source: z.string().nullable(),
+  products: z.array(z.object({ product_id: productId, name: nonBlankText, url: z.url() })),
+});
+export type BrowseProductsResult = z.output<typeof browseProductsResultSchema>;
 
 export const toolErrorSchema = z.object({
   code: z.enum(['not_found', 'rate_limited', 'upstream_unavailable', 'invalid_response',

@@ -2,9 +2,11 @@ import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput } from './client.js';
+import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput,
+  listProductCategoriesInput, browseProductsInputs } from './client.js';
 import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema, deliveryOptionsResultSchema,
-  comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput } from './contracts.js';
+  comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput,
+  listProductCategoriesResultSchema, browseProductsResultSchema } from './contracts.js';
 import type { RequestContext } from './contracts.js';
 import { compareProducts, findCommonStores } from './shopping.js';
 import { toToolError } from './errors.js';
@@ -73,6 +75,19 @@ export function createServer(client = new SuperzooClient()) {
         + 'The quote has no address-specific availability or delivery commitment.',
       inputSchema: deliveryOptionsInput, outputSchema: deliveryOptionsResultSchema, annotations,
     }, handleTool((args: z.input<typeof deliveryOptionsInput>, context) => client.getDeliveryOptions(args, context)));
+  }
+  if (client.market.country !== 'PL') {
+    const browseProductsInput = browseProductsInputs[client.market.country];
+    server.registerTool('list_product_categories', {
+      description: `List supported browsing categories in ${name} with valid facet keys and values.`,
+      inputSchema: listProductCategoriesInput, outputSchema: listProductCategoriesResultSchema, annotations,
+    }, handleTool((args: z.input<typeof listProductCategoriesInput>) => client.listProductCategories(args)));
+    server.registerTool('browse_products', {
+      description: `Browse the first page of dry dog food in ${name}. Use list_product_categories for the category ID and facet values. `
+        + 'Accepts an optional dog-age facet. Checks up to ten candidates for publication and local public sale eligibility. '
+        + 'The upstream total counts matches before those checks. Use get_product for full details.',
+      inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,
+    }, handleTool((args: z.input<typeof browseProductsInput>, context) => client.browseProducts(args, context)));
   }
   return server;
 }

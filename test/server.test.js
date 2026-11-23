@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 
 const detail = JSON.parse(readFileSync(new URL('./fixtures/product-detail.json', import.meta.url)));
 
-test('MCP exposes seven read-only tools in Slovakia, validates input and returns structured price data', async t => {
+test('MCP exposes nine read-only tools in Slovakia, validates input and returns structured price data', async t => {
   const server = createServer(new SuperzooClient({ fetchImpl: async () => new Response(JSON.stringify(detail)) }));
   const client = new Client({ name: 'test', version: '1.0.0' });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -16,7 +16,7 @@ test('MCP exposes seven read-only tools in Slovakia, validates input and returns
   await client.connect(b);
   t.after(async () => { await client.close(); await server.close(); });
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'find_stores', 'get_delivery_options', 'get_product', 'get_product_availability', 'search_products']);
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['browse_products', 'compare_products', 'find_common_stores', 'find_stores', 'get_delivery_options', 'get_product', 'get_product_availability', 'list_product_categories', 'search_products']);
   assert.ok(tools.every(tool => tool.outputSchema?.type === 'object'));
   assert.ok(tools.find(tool => tool.name === 'search_products').inputSchema.properties.online_only);
   assert.equal(tools.find(tool => tool.name === 'get_delivery_options').inputSchema.properties.quantity.maximum, 2);
@@ -192,4 +192,89 @@ test('MCP preserves stable error codes and hides unexpected exception details', 
   failure = new Error('private exception');
   const result = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.deepEqual(JSON.parse(result.content[0].text), { code: 'internal_error', message: 'Superzoo request failed', retryable: false });
+});
+
+test('MCP publishes the verified Czech category and facet and omits category tools in Poland', async t => {
+  const polish = await connect(t, new SuperzooClient({ country: 'PL' }));
+  const polishTools = await polish.listTools();
+  assert.ok(!polishTools.tools.some(tool => ['list_product_categories', 'browse_products'].includes(tool.name)));
+  const calls = [];
+  const client = await connect(t, new SuperzooClient({ country: 'CZ', fetchImpl: async url => {
+    calls.push(String(url));
+    return new Response(JSON.stringify({ products: [], totalCount: 0 }));
+  } }));
+  const { tools } = await client.listTools();
+  const browse = tools.find(tool => tool.name === 'browse_products');
+  const list = tools.find(tool => tool.name === 'list_product_categories');
+  assert.ok(browse?.outputSchema && list?.outputSchema);
+  assert.deepEqual(browse.inputSchema.required, ['category_id']);
+  const result = await client.callTool({ name: list.name, arguments: {} });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.market, 'CZ');
+  assert.deepEqual(result.structuredContent.categories, [{
+    category_id: '42eeee01-5544-4e68-8130-bef9755298ae',
+    name: 'Granule pro psy',
+    facets: [{ key: 'stari-psa', values: ['dospely', 'senior', 'stene'] }],
+  }]);
+  const { category_id } = result.structuredContent.categories[0];
+  for (const [name, args] of [[list.name, { limit: 2 }], [browse.name, { category_id, facets: { 'stari-psa': 'unknown' } }]]) {
+    const invalid = await client.callTool({ name, arguments: args });
+    assert.equal(invalid.isError, true);
+  }
+  assert.deepEqual(calls, []);
+  const products = await client.callTool({ name: browse.name, arguments: { category_id, facets: { 'stari-psa': 'senior' } } });
+  assert.equal(products.isError, undefined);
+  assert.equal(products.structuredContent.coverage, 'first_page');
+  assert.deepEqual(products.structuredContent.products, []);
+  assert.deepEqual(JSON.parse(products.content[0].text), products.structuredContent);
+  assert.equal(calls.length, 1);
+});
+
+test('Slovak browsing advertises local facets and checks Slovak price eligibility', async t => {
+  const category_id = '42eeee01-5544-4e68-8130-bef9755298ae';
+  const ids = ['294-170845', 'restricted', 'wrong-web'];
+  const calls = [];
+  const api = new SuperzooClient({ country: 'SK', fetchImpl: async (url, options) => {
+    calls.push([String(url), JSON.parse(options.body)]);
+    if (String(url).includes('parameter-filter')) {
+      return Response.json({ products: ids.map(id => ({ id })), totalCount: 238 });
+    }
+    return Response.json({ items: ids.map(id => ({
+      product: { productId: id, name: 'Granuly', alias: 'granuly', published: true, productSaleForbidden: false,
+        disallowedPriceLevels: id === 'restricted' ? ['22'] : ['1'] },
+      prices: [{ productId: id, webId: id === 'wrong-web' ? 'superzoo_cz' : 'superzoo_sk', priceLevelId: '22' }],
+    })) });
+  } });
+  const client = await connect(t, api);
+  const { tools } = await client.listTools();
+  const tool = tools.find(item => item.name === 'browse_products');
+  assert.deepEqual(Object.keys(tool.inputSchema.properties.facets.properties), ['vek-psa']);
+  const list = await client.callTool({ name: 'list_product_categories', arguments: {} });
+  assert.deepEqual(list.structuredContent, { market: 'SK', categories: [{
+    category_id, name: 'Granuly pre psov', facets: [{ key: 'vek-psa', values: ['dospely', 'senior', 'stena'] }],
+  }] });
+  for (const facets of [{ 'stari-psa': 'senior' }, { 'vek-psa': 'stene' }]) {
+    const invalid = await client.callTool({ name: tool.name, arguments: { category_id, facets } });
+    assert.equal(invalid.isError, true);
+    await assert.rejects(() => api.browseProducts({ category_id, facets }), { name: 'ZodError' });
+  }
+  assert.deepEqual(calls, []);
+  const facets = { 'vek-psa': 'senior' };
+  const result = await client.callTool({ name: tool.name, arguments: { category_id, facets } });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(calls, [
+    ['https://parameter-filter.superzoo.cz/filter-products/superzoo_sk', {
+      priceLevel: '22', scope: { category: 'c1955f56-7438-4c93-8875-9dc8f634acd9' },
+      filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
+      facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
+      query: { parameters: [{ alias: 'vek-psa', values: ['senior'] }] },
+      paging: { page: 1, limit: 10 },
+    }],
+    ['https://read-model.superzoo.cz/collections/product/webs/superzoo_sk/languages/sk/documents/filter', { ids }],
+  ]);
+  assert.equal(result.structuredContent.market, 'SK');
+  assert.equal(result.structuredContent.upstream_total_count, 238);
+  assert.equal(result.structuredContent.eligible_count, 1);
+  assert.deepEqual(result.structuredContent.facets_applied, facets);
+  assert.deepEqual(result.structuredContent.products, [{ product_id: ids[0], name: 'Granuly', url: 'https://www.superzoo.sk/granuly/' }]);
 });

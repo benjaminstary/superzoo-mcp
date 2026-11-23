@@ -1,13 +1,23 @@
 import { z } from 'zod';
 import { getMarket } from './config.js';
 import type { Market } from './config.js';
-import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult, DeliveryOptionsResult } from './contracts.js';
+import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult, DeliveryOptionsResult,
+  ListProductCategoriesResult, BrowseProductsResult } from './contracts.js';
 import { createRequestPolicy } from './request.js';
 import { SuperzooError } from './errors.js';
 
 const SEARCH = 'https://full-text-search.superzoo.cz/search/api';
 const DELIVERY_QUOTE = 'https://logistics.superzoo.cz/api/actions/calculate-product-shipping-options';
 const CANDIDATE_LIMIT = 200;
+const CATEGORY_PAGE_SIZE = 10;
+const DOG_FOOD = {
+  id: '42eeee01-5544-4e68-8130-bef9755298ae',
+  scopeId: 'c1955f56-7438-4c93-8875-9dc8f634acd9',
+  markets: {
+    CZ: { webId: 'superzoo_cz', name: 'Granule pro psy', facet: 'stari-psa', ages: ['dospely', 'senior', 'stene'] },
+    SK: { webId: 'superzoo_sk', name: 'Granuly pre psov', facet: 'vek-psa', ages: ['dospely', 'senior', 'stena'] },
+  },
+} as const;
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/);
 const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
 
@@ -50,9 +60,36 @@ export const findStoresInput = z.strictObject({
   latitude: z.number().min(-90).max(90).describe('Latitude in decimal degrees.'),
   longitude: z.number().min(-180).max(180).describe('Longitude in decimal degrees.'),
 });
+export const listProductCategoriesInput = z.strictObject({});
+const browseCategoryInput = z.strictObject({
+  category_id: z.literal(DOG_FOOD.id).describe('Category ID from list_product_categories.'),
+});
+export const browseProductsInputs = {
+  CZ: browseCategoryInput.extend({
+    facets: z.strictObject({ [DOG_FOOD.markets.CZ.facet]: z.enum(DOG_FOOD.markets.CZ.ages).optional() }).optional(),
+  }),
+  SK: browseCategoryInput.extend({
+    facets: z.strictObject({ [DOG_FOOD.markets.SK.facet]: z.enum(DOG_FOOD.markets.SK.ages).optional() }).optional(),
+  }),
+};
+type BrowseProductsInput = z.input<(typeof browseProductsInputs)[keyof typeof browseProductsInputs]>;
 const nullableText = z.string().nullable().optional();
 const decimal = decimalText.nullable().optional();
 const nonBlankText = z.string().regex(/\S/);
+const categoryPageSchema = z.object({
+  products: z.array(z.object({ id: idSchema })).max(CATEGORY_PAGE_SIZE),
+  totalCount: z.number().int().nonnegative(),
+}).refine(({ products, totalCount }) =>
+  products.length <= totalCount && new Set(products.map(product => product.id)).size === products.length);
+const categoryProductsSchema = z.object({
+  items: z.array(z.object({
+    product: z.object({
+      productId: idSchema, name: nonBlankText, alias: nonBlankText,
+      published: z.boolean(), productSaleForbidden: z.boolean(), disallowedPriceLevels: z.array(z.string()),
+    }),
+    prices: z.array(z.object({ productId: idSchema, webId: nonBlankText, priceLevelId: nonBlankText })),
+  })).max(CATEGORY_PAGE_SIZE),
+});
 const ratingSchema = z.object({
   rating: z.number().nonnegative(),
   ratingCount: z.number().int().nonnegative(),
@@ -292,6 +329,69 @@ export class SuperzooClient {
       detail_failures: detailFailures,
       coverage: 'bounded_candidates',
     };
+  }
+
+  async listProductCategories(input: z.input<typeof listProductCategoriesInput>): Promise<ListProductCategoriesResult> {
+    listProductCategoriesInput.parse(input);
+    if (this.market.country === 'PL') {
+      throw new SuperzooError('not_found', `Category browsing is not supported in ${this.market.name}`);
+    }
+    const category = DOG_FOOD.markets[this.market.country];
+    return {
+      market: this.market.country,
+      categories: [{
+        category_id: DOG_FOOD.id, name: category.name,
+        facets: [{ key: category.facet, values: [...category.ages] }],
+      }],
+    };
+  }
+
+  async browseProducts(input: BrowseProductsInput, requestContext: RequestContext = {}): Promise<BrowseProductsResult> {
+    const market = this.market;
+    if (market.country === 'PL') {
+      throw new SuperzooError('not_found', `Category browsing is not supported in ${market.name}`);
+    }
+    const { category_id, facets = {} } = browseProductsInputs[market.country].parse(input);
+    const { webId, facet } = DOG_FOOD.markets[market.country];
+    const priceLevel = market.priceLevel;
+    const source = `https://parameter-filter.superzoo.cz/filter-products/${webId}`;
+    const [age] = Object.values(facets);
+    const query = age === undefined ? {} : { parameters: [{ alias: facet, values: [age] }] };
+    const post = { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' } } as const;
+    const { data: page, checked_at } = await this.policy.request({
+      market: market.country, operation: 'category_filter', url: source, schema: categoryPageSchema,
+      init: { ...post, body: JSON.stringify({
+        priceLevel, scope: { category: DOG_FOOD.scopeId },
+        filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
+        facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
+        query, paging: { page: 1, limit: CATEGORY_PAGE_SIZE },
+      }) },
+      ...requestContext,
+    });
+    const ids = page.products.map(product => product.id);
+    const result = {
+      market: market.country, source, checked_at, category_id,
+      facets_applied: age === undefined ? {} : facets, coverage: 'first_page' as const,
+      upstream_total_count: page.totalCount, candidates_checked: ids.length,
+    };
+    if (ids.length === 0) return { ...result, product_source: null, eligible_count: 0, products: [] };
+
+    const product_source = `https://read-model.superzoo.cz/collections/product/webs/${webId}/languages/${market.language}/documents/filter`;
+    const { data: records } = await this.policy.request({
+      market: market.country, operation: 'category_products', url: product_source, schema: categoryProductsSchema,
+      init: { ...post, body: JSON.stringify({ ids }) }, ...requestContext,
+    });
+    const byId = new Map(records.items.map(item => [item.product.productId, item]));
+    if (records.items.length !== ids.length || ids.some(id => !byId.has(id))) {
+      throw new SuperzooError('invalid_response', 'Superzoo category product records did not match the requested IDs');
+    }
+    const products = ids.flatMap(id => {
+      const { product, prices } = byId.get(id)!;
+      if (!product.published || product.productSaleForbidden || product.disallowedPriceLevels.includes(priceLevel) ||
+          !prices.some(price => price.productId === id && price.webId === webId && price.priceLevelId === priceLevel)) return [];
+      return [{ product_id: id, name: product.name, url: link(market, product.alias) }];
+    });
+    return { ...result, product_source, eligible_count: products.length, products };
   }
 
   async getProductAvailability(input: z.input<typeof availabilityInput>, requestContext: RequestContext = {}): Promise<AvailabilityResult> {

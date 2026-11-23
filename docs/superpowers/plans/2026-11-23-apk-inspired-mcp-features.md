@@ -87,14 +87,18 @@
 
 **Files:** `src/client.ts`, `src/contracts.ts`, `src/server.ts`, `test/client.test.js`, `test/server.test.js`, `README.md`, `CHANGELOG.md`.
 
-**Deferred.** Task 4 verified anonymous navigation in SK and CZ. Implementation requires a market with verified facet discovery, successful filtered results, and preserved product restrictions.
+**Complete for the Slovak and Czech dry dog food categories.** The shopping follow-up verified the navigation-to-scope mapping, local dog-age facet, and first-page results in each market. Browsing checks publication, sale restrictions, and local price-level eligibility through the product read model. Pagination, additional categories, and Poland remain deferred. [Czech evidence](../../investigation.md#verified-czech-dog-food-category-filter--2026-11-23) · [Slovak evidence](../../investigation.md#slovak-dry-dog-food-category-filter--2026-11-23)
 
 **Proposed interface:** `list_product_categories({})` returns public category IDs and names. `browse_products({ category_id, facets?, page?, limit? })` returns public product summaries with provenance and coverage. Publish facet discovery through the category result or a category-scoped lookup according to Task 4. Include pagination only where verified. Start with one verified facet and preserve the current search tool.
 
-- [ ] Add failing offline tests for category discovery, valid facet selection, forbidden and market-restricted products, malformed input, and empty results. If pagination ships, test first-page defaults, stable request parameters, and bounded coverage. Assert the tools are listed only in markets verified for their respective routes.
-- [ ] Run `npm run build && node --test test/client.test.js test/server.test.js` and confirm failures for the new behavior.
-- [ ] Add the client methods and output schemas for the verified inputs and response shapes. Reuse product exclusion logic where the upstream fields support it, or use the equivalent restrictions verified in Task 4. Register the tools and preserve shared request limits.
-- [ ] Rerun the focused tests and typecheck. Document supported markets, facet discovery, and coverage in the README and changelog.
+- [x] Add failing offline tests for category discovery, valid facet selection, forbidden and market-restricted products, malformed input, and empty results. If pagination ships, test first-page defaults, stable request parameters, and bounded coverage. Assert the tools are listed only in markets verified for their respective routes.
+- [x] Run `npm run build && node --test test/client.test.js test/server.test.js` and confirm failures for the new behavior.
+- [x] Add the client methods and output schemas for the verified inputs and response shapes. Reuse product exclusion logic where the upstream fields support it, or use the equivalent restrictions verified in Task 4. Register the tools and preserve shared request limits.
+- [x] Rerun the focused tests and typecheck. Document supported markets, facet discovery, and coverage in the README and changelog.
+
+**Verified:** The tools are discoverable in SK and CZ. Browsing supports the first page of up to ten candidates with optional `vek-psa` in SK or `stari-psa` in CZ. Both saved pages per market passed the output schema in offline replay. Typecheck, 149 full-suite tests, and the installed-package smoke test passed. [Shopping follow-up Task 4](2026-11-23-shopping-feature-follow-ups.md#task-4--ship-verified-category-browsing)
+
+Additional categories, category-specific facet discovery, and pagination are pending verification. [Shopping follow-up Task 8](2026-11-23-shopping-feature-follow-ups.md#task-8--verify-broader-category-browsing)
 
 ## Task 6 — Verify public shipping quotes and pickup points
 
@@ -132,6 +136,6 @@
 | --- | --- |
 | Product enrichment | Available through existing product, enriched search, and comparison results in SK, CZ, and PL. Optional values depend on the detail response. |
 | Nearest store | Available in SK and CZ with coordinates and up to one branch. PL, broader stock ID equivalence, caller distance, and pagination remain unverified. |
-| Category browsing and facets | Task 5 deferred. Anonymous navigation worked in SK and CZ. The SK filter descriptor and CZ product filter returned HTTP 500, leaving facets, product exclusions, and pagination unverified. |
+| Category browsing and facets | Deferred in v0.3.0 after HTTP 500 responses. The unreleased implementation uses the verified Slovak and Czech filter requests from the shopping follow-up. |
 | Delivery quotes | Available in SK and CZ for one unit per quote, including supplied pickup places. PL and destination-specific availability remain unverified. Standalone pickup-place listing returned HTTP 401. The verified pickup-method catalog remains a follow-up. |
 | Feeding tables, autocomplete, exact EAN lookup | Follow-ups with separate evidence requirements. The exact EAN probe returned HTTP 403. |

@@ -722,3 +722,130 @@ test('filtered searches reuse cached details without refreshing their retrieval 
   assert.equal(result.products_checked, 1);
   assert.deepEqual(calls, ['match']);
 });
+
+const dogFoodId = '42eeee01-5544-4e68-8130-bef9755298ae';
+const categoryFilterUrl = 'https://parameter-filter.superzoo.cz/filter-products/superzoo_cz';
+const categoryProductUrl = 'https://read-model.superzoo.cz/collections/product/webs/superzoo_cz/languages/cs/documents/filter';
+
+function categoryRecord(id) {
+  return {
+    product: { productId: id, name: `Dog food ${id}`, alias: `dog-food-${id}`,
+      published: true, productSaleForbidden: false, disallowedPriceLevels: [] },
+    prices: [{ productId: id, webId: 'superzoo_cz', priceLevelId: '1' }],
+  };
+}
+
+test('category browse uses the filter scope ID, joins in filter order, and excludes ineligible products', async () => {
+  const ids = ['294-170845', 'unpublished', 'forbidden', 'blocked', 'no-price', 'wrong-product', 'wrong-web', 'wrong-level', '294-170827'];
+  const records = ids.map(categoryRecord);
+  records[1].product.published = false;
+  records[2].product.productSaleForbidden = true;
+  records[3].product.disallowedPriceLevels = ['1'];
+  records[4].prices = [];
+  records[5].prices[0].productId = '294-170845';
+  records[6].prices[0].webId = 'superzoo_sk';
+  records[7].prices[0].priceLevelId = '22';
+  records[8].product.disallowedPriceLevels = ['22'];
+  const calls = [];
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.redirect, 'error');
+    assert.equal(options.headers.get('Content-Type'), 'application/json');
+    calls.push([String(url), JSON.parse(options.body)]);
+    return String(url) === categoryFilterUrl
+      ? response({ products: ids.map(id => ({ id })), totalCount: 222 })
+      : response({ items: records.reverse() });
+  } });
+  const facets = { 'stari-psa': 'senior' };
+  const result = await client.browseProducts({ category_id: dogFoodId, facets });
+  assert.deepEqual(calls, [
+    [categoryFilterUrl, {
+      priceLevel: '1', scope: { category: 'c1955f56-7438-4c93-8875-9dc8f634acd9' },
+      filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
+      facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
+      query: { parameters: [{ alias: 'stari-psa', values: ['senior'] }] },
+      paging: { page: 1, limit: 10 },
+    }],
+    [categoryProductUrl, { ids }],
+  ]);
+  assert.equal(result.market, 'CZ');
+  assert.equal(result.category_id, dogFoodId);
+  assert.equal(result.source, categoryFilterUrl);
+  assert.equal(result.product_source, categoryProductUrl);
+  assert.ok(Date.parse(result.checked_at));
+  assert.equal(result.coverage, 'first_page');
+  assert.deepEqual(result.facets_applied, facets);
+  assert.equal(result.upstream_total_count, 222);
+  assert.equal(result.candidates_checked, ids.length);
+  assert.equal(result.eligible_count, 2);
+  assert.deepEqual(result.products, ['294-170845', '294-170827'].map(id => ({
+    product_id: id, name: `Dog food ${id}`, url: `https://www.superzoo.cz/dog-food-${id}/`,
+  })));
+});
+
+test('empty category page skips the product join and sends the unfiltered query', async () => {
+  const calls = [];
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    calls.push([String(url), JSON.parse(options.body).query]);
+    return response({ products: [], totalCount: 0 });
+  } });
+  const result = await client.browseProducts({ category_id: dogFoodId });
+  assert.deepEqual(calls, [[categoryFilterUrl, {}]]);
+  assert.deepEqual(result.facets_applied, {});
+  assert.equal(result.upstream_total_count, 0);
+  assert.equal(result.candidates_checked, 0);
+  assert.equal(result.eligible_count, 0);
+  assert.equal(result.product_source, null);
+  assert.deepEqual(result.products, []);
+});
+
+test('category browse rejects invalid inputs and unsupported markets before fetching', async () => {
+  const calls = [];
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => { calls.push(url); } });
+  for (const args of [
+    {}, { category_id: 'arbitrary-category' }, { category_id: dogFoodId, page: 2 },
+    { category_id: dogFoodId, facets: { 'stari-psa': 'unknown' } },
+    { category_id: dogFoodId, facets: { 'stari-psa': ['senior'] } },
+    { category_id: dogFoodId, facets: { unsupported: 'senior' } },
+  ]) {
+    await assert.rejects(() => client.browseProducts(args), { name: 'ZodError' });
+  }
+  await assert.rejects(() => client.listProductCategories({ limit: 1 }), { name: 'ZodError' });
+  const unsupported = new SuperzooClient({ country: 'PL', fetchImpl: async url => { calls.push(url); } });
+  await assert.rejects(() => unsupported.listProductCategories({}), { code: 'not_found' });
+  await assert.rejects(() => unsupported.browseProducts({ category_id: dogFoodId }), { code: 'not_found' });
+  assert.deepEqual(calls, []);
+});
+
+test('category browse rejects incomplete, mismatched, duplicate, or malformed product records', async () => {
+  const id = '294-170845';
+  const missingRestriction = categoryRecord(id);
+  delete missingRestriction.product.productSaleForbidden;
+  const malformedRestriction = categoryRecord(id);
+  malformedRestriction.product.disallowedPriceLevels = [1];
+  for (const items of [[], [categoryRecord('wrong-id')], [categoryRecord(id), categoryRecord(id)],
+    [missingRestriction], [malformedRestriction]]) {
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => response(
+      String(url) === categoryFilterUrl ? { products: [{ id }], totalCount: 1 } : { items },
+    ) });
+    await assert.rejects(() => client.browseProducts({ category_id: dogFoodId }), { code: 'invalid_response' });
+  }
+});
+
+test('category browse rejects malformed or out-of-bounds filter pages before joining', async () => {
+  for (const page of [
+    { products: [{ id: '294-170845' }], totalCount: 0 },
+    { products: [{ id: '294-170845' }, { id: '294-170845' }], totalCount: 2 },
+    { products: Array.from({ length: 11 }, (_, index) => ({ id: `294-${index}` })), totalCount: 11 },
+    { products: [{ id: 170845 }], totalCount: 1 },
+  ]) {
+    const calls = [];
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => {
+      calls.push(String(url));
+      return response(page);
+    } });
+    await assert.rejects(() => client.browseProducts({ category_id: dogFoodId }), { code: 'invalid_response' });
+    assert.deepEqual(calls, [categoryFilterUrl]);
+  }
+});
