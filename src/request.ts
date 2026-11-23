@@ -57,10 +57,11 @@ function retryDelay(value: string | null): number {
   return 200 + Math.floor(Math.random() * 301);
 }
 
-export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 15_000, signal: shutdownSignal }: {
+export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 15_000, signal: shutdownSignal, logRequests = true }: {
   fetchImpl?: typeof globalThis.fetch;
   timeoutMs?: number;
   signal?: AbortSignal;
+  logRequests?: boolean;
 } = {}) {
   let active = 0;
   const queue: QueueEntry[] = [];
@@ -210,8 +211,10 @@ export function createRequestPolicy({ fetchImpl = globalThis.fetch, timeoutMs = 
       status = error instanceof SuperzooError ? error.code : 'internal_error';
       throw error;
     } finally {
-      console.error(JSON.stringify({ market: options.market, operation: options.operation,
-        status, duration_ms: Math.max(0, Date.now() - started), cache_hit: cacheHit }));
+      if (logRequests) {
+        console.error(JSON.stringify({ market: options.market, operation: options.operation,
+          status, duration_ms: Math.max(0, Date.now() - started), cache_hit: cacheHit }));
+      }
     }
   }
   return { request };

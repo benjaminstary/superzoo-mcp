@@ -22,7 +22,7 @@ function validateProduct(product, market) {
 // The request policy owns retries and deadlines. This canary adds no extra retries.
 export async function runSmoke({ country = 'SK', client, log = console.error, now = performance.now.bind(performance) } = {}) {
   const market = getMarket(country);
-  client ??= new SuperzooClient({ country: market.country });
+  client ??= new SuperzooClient({ country: market.country, logRequests: false });
   let productId;
   const operations = [
     ['search', async () => {

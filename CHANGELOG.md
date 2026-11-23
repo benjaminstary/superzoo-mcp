@@ -9,6 +9,7 @@ Unreleased are merged but have not been included in a published release.
 
 - Stdio cancellation stops upstream work for MCP requests with ID `0` or an
   empty string. Responses preserve the original request ID.
+- Upstream smoke checks emit one bounded diagnostic per check on stderr.
 
 ## [0.2.0] - 2026-11-08
 

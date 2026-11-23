@@ -157,7 +157,17 @@ test('CLI exits zero for valid fixtures and nonzero for failed validation, with 
     assert.equal(child.status, malformed ? 1 : 0, child.stderr);
     assert.equal(child.stdout, '');
     const records = child.stderr.trim().split('\n').map(line => JSON.parse(line));
-    assert.equal(records.at(-1).result, malformed ? 'failed' : 'ok');
+    const outcomes = records.map(({ duration_ms, ...outcome }) => {
+      assert.ok(Number.isFinite(duration_ms) && duration_ms >= 0);
+      return outcome;
+    });
+    assert.deepEqual(outcomes, malformed
+      ? [{ market: 'SK', operation: 'search', result: 'failed', code: 'invalid_response' }]
+      : [
+        { market: 'SK', operation: 'search', result: 'ok' },
+        { market: 'SK', operation: 'product', result: 'ok' },
+        { market: 'SK', operation: 'availability', result: 'ok' },
+      ]);
     assert.ok(!child.stderr.includes('BRIT Care'));
     assert.ok(!child.stderr.includes('Bratislava'));
   }
