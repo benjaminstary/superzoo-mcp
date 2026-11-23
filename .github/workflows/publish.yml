@@ -1,8 +1,17 @@
-name: Publish to npm
+name: Publish release
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable Git tag to publish to GHCR (for example, v0.3.0)
+        required: true
+        type: string
+
+env:
+  RELEASE_REF: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
 
 permissions:
   contents: read
@@ -13,7 +22,7 @@ concurrency:
 
 jobs:
   publish:
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,20 +30,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_REF }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
-      - name: Verify release version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+      - &verify-release-version
+        name: Verify release version
         run: |
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
-          if (!/^\d+\.\d+\.\d+$/.test(version) || process.env.RELEASE_TAG !== `v${version}`) {
+          if (!/^\d+\.\d+\.\d+$/.test(version) || process.env.RELEASE_REF !== `refs/tags/v${version}`) {
             throw new Error(`Stable release tag must match package version: v${version}`);
           }
           NODE
@@ -46,3 +54,34 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-image:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_REF }}
+          persist-credentials: false
+      - *verify-release-version
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build and push image
+        run: |
+          version="${RELEASE_REF#refs/tags/v}"
+          repository="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "ghcr.io/$repository:$version" \
+            --push .
