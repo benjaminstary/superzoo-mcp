@@ -109,6 +109,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `compare_products` | `product_ids` (1–10 unique variant IDs) | Input-ordered products with per-product errors and original fetch timestamps |
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
 | `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
+| `get_delivery_options` (SK, CZ) | `product_id` | Market-level shipping quote for one unit, including prices, dates, and pickup places supplied with each method |
 
 Example workflow:
 
@@ -125,11 +126,16 @@ search_products({ query: "brit care", brand: "Brit Care", min_price: "0.10", max
 compare_products({ product_ids: ["294-101115", "294-172197"] })
 find_common_stores({ product_ids: ["294-101115", "294-172197"], city: "Bratislava" })
 find_stores({ latitude: 48.15, longitude: 17.11 }) // SK, near central Bratislava
+get_delivery_options({ product_id: "294-101115" }) // SK or CZ
 ```
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 
 Use `get_product_availability` for stock. The saved Slovak evidence confirms that the locator and stock API use the same ID for Bratislava Central (`SKPIC-520)). Broader ID equivalence and caller distance remain unverified. [Store locator evidence](docs/investigation.md#anonymous-store-locator--2026-11-23)
+
+`get_delivery_options` accepts a variant-specific product ID and quotes one unit without a postal code. Results include `market`, `source`, `checked_at`, `product_id`, `delivery_methods`, and `pickup_methods`. Each method includes `method_id`, the localized `name`, nullable `price`, and nullable `delivery_date`. Prices include VAT and keep the upstream decimal string and currency. `is_price_from` preserves the home-delivery price qualifier. Dates retain their original offsets.
+
+Pickup methods preserve the upstream grouping, which can include express delivery. Each includes `is_store` and the supplied `places`, with each place's ID, name, availability flag, date, and any extra fee. Unknown values are `null`. Empty arrays mean the quote supplied no entries for that group. The quote covers the selected market. Address-specific availability, checkout totals, and delivery commitments remain outside its coverage. [Shipping quote evidence](docs/investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23)
 
 Brand matching is exact after case/accent normalization. Price bounds are inclusive nonnegative decimal strings; reversed ranges are rejected. Filters combine with AND. `online_only: true` requires explicit delivery status `available`; absent, unknown, or unavailable statuses are omitted. `can_buy` and branch stock do not establish delivery availability. `online_only: false` adds no delivery filter.
 

@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 
 const detail = JSON.parse(readFileSync(new URL('./fixtures/product-detail.json', import.meta.url)));
 
-test('MCP exposes six read-only tools in Slovakia, validates input and returns structured price data', async t => {
+test('MCP exposes seven read-only tools in Slovakia, validates input and returns structured price data', async t => {
   const server = createServer(new SuperzooClient({ fetchImpl: async () => new Response(JSON.stringify(detail)) }));
   const client = new Client({ name: 'test', version: '1.0.0' });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -16,7 +16,7 @@ test('MCP exposes six read-only tools in Slovakia, validates input and returns s
   await client.connect(b);
   t.after(async () => { await client.close(); await server.close(); });
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'find_stores', 'get_product', 'get_product_availability', 'search_products']);
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'find_stores', 'get_delivery_options', 'get_product', 'get_product_availability', 'search_products']);
   assert.ok(tools.every(tool => tool.outputSchema?.type === 'object'));
   assert.ok(tools.find(tool => tool.name === 'search_products').inputSchema.properties.online_only);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint && !tool.annotations.destructiveHint));
@@ -83,11 +83,41 @@ test('MCP advertises the Czech locator and validates coordinates before the requ
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
 });
 
-test('MCP leaves the unverified Polish locator out of discovery', async t => {
+test('MCP advertises Czech delivery quotes with a product-only input and structured results', async t => {
+  const calls = [];
+  const product = { productId: '294-101115', quantity: 1 };
+  const client = await connect(t, new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ shippingOptions: {
+      shipment: { items: [product] }, items: [product], personalPickups: [],
+      deliveryMethods: [{ deliveryMethodId: '23b3f7f3-17d6-4694-a5eb-9822de093d65', name: 'Zásilkovna domů',
+        price: { amountIncVat: '99', currency: 'CZK' }, deliveryDate: '2026-11-24T16:00:00+01:00' }],
+    } }));
+  } }));
+  const { tools } = await client.listTools();
+  const tool = tools.find(tool => tool.name === 'get_delivery_options');
+  assert.ok(tool);
+  assert.deepEqual(tool.inputSchema.required, ['product_id']);
+  assert.deepEqual(Object.keys(tool.inputSchema.properties), ['product_id']);
+  assert.equal(tool.outputSchema.type, 'object');
+  const args = { product_id: product.productId };
+  const bad = await client.callTool({ name: tool.name, arguments: { ...args, postal_code: '16000' } });
+  assert.equal(bad.isError, true);
+  assert.deepEqual(calls, []);
+  const result = await client.callTool({ name: tool.name, arguments: args });
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(calls, [{ webId: 'superzoo_cz', product }]);
+  assert.equal(result.structuredContent.market, 'CZ');
+  assert.deepEqual(result.structuredContent.delivery_methods[0].price, { amount: '99', currency: 'CZK' });
+  assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+});
+
+test('MCP leaves unverified Polish locator and delivery quotes out of discovery', async t => {
   const client = await connect(t, new SuperzooClient({ country: 'PL' }));
   const { tools } = await client.listTools();
   assert.equal(tools.length, 5);
   assert.ok(!tools.some(tool => tool.name === 'find_stores'));
+  assert.ok(!tools.some(tool => tool.name === 'get_delivery_options'));
 });
 
 test('MCP handshake reports the package version', async t => {

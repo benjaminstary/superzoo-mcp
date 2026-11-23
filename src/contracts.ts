@@ -96,6 +96,40 @@ export const findStoresResultSchema = z.object({
 });
 export type FindStoresResult = z.output<typeof findStoresResultSchema>;
 
+const quotedPrice = z.object({
+  amount: decimalText,
+  currency: z.enum(['EUR', 'CZK']),
+}).nullable().describe('Upstream quoted amount including VAT.');
+const quotedDate = z.iso.datetime({ offset: true }).nullable()
+  .describe('Upstream market-level quote timestamp in its original offset.');
+const quotedMethod = {
+  method_id: nonBlankText,
+  name: nonBlankText,
+  price: quotedPrice,
+  delivery_date: quotedDate,
+};
+export const deliveryOptionsResultSchema = z.object({
+  ...provenance,
+  market: market.exclude(['PL']),
+  product_id: productId,
+  delivery_methods: z.array(z.object({
+    ...quotedMethod,
+    is_price_from: z.boolean().nullable(),
+  })),
+  pickup_methods: z.array(z.object({
+    ...quotedMethod,
+    is_store: z.boolean().nullable(),
+    places: z.array(z.object({
+      place_id: nonBlankText,
+      name: nonBlankText,
+      is_available: z.boolean().nullable(),
+      delivery_date: quotedDate,
+      extra_fee: quotedPrice,
+    })),
+  })),
+});
+export type DeliveryOptionsResult = z.output<typeof deliveryOptionsResultSchema>;
+
 const partialSearchProduct = z.object({
   product_id: productId, name: z.string(), description: nullableText, url: z.string(),
   price: z.null(), availability: z.null(), detail_error: z.string(),

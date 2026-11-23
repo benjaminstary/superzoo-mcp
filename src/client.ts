@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { getMarket } from './config.js';
 import type { Market } from './config.js';
-import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult } from './contracts.js';
+import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult, DeliveryOptionsResult } from './contracts.js';
 import { createRequestPolicy } from './request.js';
 import { SuperzooError } from './errors.js';
 
 const SEARCH = 'https://full-text-search.superzoo.cz/search/api';
+const DELIVERY_QUOTE = 'https://logistics.superzoo.cz/api/actions/calculate-product-shipping-options';
 const CANDIDATE_LIMIT = 200;
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/);
 const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
@@ -24,6 +25,7 @@ function compareDecimals(left: string, right: string): number {
 }
 
 export const productInput = z.object({ product_id: idSchema });
+export const deliveryOptionsInput = z.strictObject(productInput.shape);
 export const searchInput = z.object({
   query: z.string().trim().min(1).max(200),
   limit: z.number().int().min(1).max(50).default(10),
@@ -103,6 +105,42 @@ const nearestStoreSchema = z.object({
     longitude: findStoresInput.shape.longitude.nullable().catch(null).optional(),
   }).nullable(),
 });
+const quotePrice = z.object({
+  amountIncVat: decimalText,
+  currency: z.enum(['EUR', 'CZK']),
+}).nullish().catch(null);
+const quoteDate = z.iso.datetime({ offset: true }).nullish().catch(null);
+const quoteFlag = z.boolean().nullish().catch(null);
+const quoteMethod = {
+  name: nonBlankText,
+  price: quotePrice,
+  deliveryDate: quoteDate,
+};
+const quotedItems = z.tuple([z.object({ productId: idSchema, quantity: z.literal(1) })]);
+const deliveryQuoteSchema = z.object({
+  shippingOptions: z.object({
+    shipment: z.object({ items: quotedItems }),
+    items: quotedItems.optional(),
+    deliveryMethods: z.array(z.object({
+      ...quoteMethod,
+      deliveryMethodId: nonBlankText,
+      isPriceFrom: quoteFlag,
+    })),
+    personalPickups: z.array(z.object({
+      ...quoteMethod,
+      personalPickupId: nonBlankText,
+      isStore: quoteFlag,
+      places: z.array(z.object({
+        pickupPlaceId: nonBlankText,
+        personalPickupId: nonBlankText,
+        name: nonBlankText,
+        isAvailable: quoteFlag,
+        deliveryDate: quoteDate,
+        extraFee: quotePrice,
+      })),
+    }).refine(method => method.places.every(place => place.personalPickupId === method.personalPickupId))),
+  }),
+});
 const link = (market: Market, alias: string) => `${market.web}/${encodeURIComponent(alias)}/`;
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
@@ -111,6 +149,8 @@ export function matchesStoreCity(store: { name: string; address: string }, city:
 }
 
 const context = (market: Market, source: string, checked_at: string) => ({ source, market: market.country, checked_at });
+const publicQuotePrice = (market: Market, price: z.output<typeof quotePrice>) =>
+  price && price.currency === market.currency ? { amount: price.amountIncVat, currency: price.currency } : null;
 const publicUnitPrice = (price: z.output<typeof unitPriceSchema>) => price ? {
   amount: price.unitPrice,
   unit_size: price.unitSize,
@@ -289,6 +329,39 @@ export class SuperzooClient {
         store_id: store.id, name: store.name, address: store.address,
         latitude: store.latitude ?? null, longitude: store.longitude ?? null,
       }] : [],
+    };
+  }
+
+  async getDeliveryOptions(input: z.input<typeof deliveryOptionsInput>, requestContext: RequestContext = {}): Promise<DeliveryOptionsResult> {
+    const { product_id } = deliveryOptionsInput.parse(input);
+    const market = this.market;
+    if (market.deliveryQuoteWebId === null) {
+      throw new SuperzooError('not_found', `Delivery quotes are not supported in ${market.name}`);
+    }
+    const { data, checked_at } = await this.policy.request({
+      market: market.country, operation: 'delivery_quote', url: DELIVERY_QUOTE,
+      schema: deliveryQuoteSchema.refine(({ shippingOptions }) =>
+        shippingOptions.shipment.items[0].productId === product_id &&
+        (shippingOptions.items === undefined || shippingOptions.items[0].productId === product_id)),
+      init: { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webId: market.deliveryQuoteWebId, product: { productId: product_id, quantity: 1 } }) },
+      ...requestContext,
+    });
+    const { deliveryMethods, personalPickups } = data.shippingOptions;
+    return {
+      market: market.country, source: DELIVERY_QUOTE, checked_at, product_id,
+      delivery_methods: deliveryMethods.map(method => ({
+        method_id: method.deliveryMethodId, name: method.name, price: publicQuotePrice(market, method.price),
+        delivery_date: method.deliveryDate ?? null, is_price_from: method.isPriceFrom ?? null,
+      })),
+      pickup_methods: personalPickups.map(method => ({
+        method_id: method.personalPickupId, name: method.name, price: publicQuotePrice(market, method.price),
+        delivery_date: method.deliveryDate ?? null, is_store: method.isStore ?? null,
+        places: method.places.map(place => ({
+          place_id: place.pickupPlaceId, name: place.name, is_available: place.isAvailable ?? null,
+          delivery_date: place.deliveryDate ?? null, extra_fee: publicQuotePrice(market, place.extraFee),
+        })),
+      })),
     };
   }
 }

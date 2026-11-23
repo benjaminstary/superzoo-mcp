@@ -98,20 +98,22 @@
 
 **Files:** `docs/investigation.md`.
 
-- [ ] Trace the product shipping calculator and pickup-point lookup, starting at Hermes `#15444`, `#15447`, and `#59233`. Confirm from the call path that a quote request only reads options. Record required inputs, the route's official origin, and any cart, account, or reservation dependency before probing.
-- [ ] For each candidate market, verify one anonymous quote for a public product ID and the least precise location required by the route. Check currency, method identifiers, availability, timing semantics, and whether pickup points can be listed without checkout state. If the route requires account or checkout state, record the dependency and stop that branch.
-- [ ] Record response shapes and supported inputs. Task 7 requires at least one verified anonymous product quote. Record an independently verified pickup-point listing as a follow-up.
+- [x] Trace the product shipping calculator and pickup-point lookup. The quote path reads options from the official logistics service with a market ID, product ID, and quantity. The checkout map requires basket and shipment state.
+- [x] Verify one anonymous quote per candidate market. SK and CZ returned prices, dates, and associated store pickup places for one unit without location inputs. The direct pickup-place listing returned HTTP 401. The separate pickup-method catalog returned HTTP 200 in SK and CZ. PL remains unverified.
+- [x] Record response shapes and supported inputs. SK and CZ meet the Task 7 gate. The pickup-method catalog is a follow-up. [Shipping investigation](../../investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23)
 
 ## Task 7 — Implement verified delivery options
 
 **Files:** `src/client.ts`, `src/contracts.ts`, `src/server.ts`, `test/client.test.js`, `test/server.test.js`, `README.md`, `CHANGELOG.md`.
 
-**Proposed interface:** `get_delivery_options({ product_id, postal_code? })` for a verified product quote. Expose `postal_code` only if the route supports it and require it when upstream requires it. Return `market`, `source`, `checked_at`, `product_id`, and verified methods with nullable quoted cost and timing. Include pickup points when the verified response associates them with a method. A standalone pickup-point tool is a separate scope decision.
+**Proposed interface:** `get_delivery_options({ product_id })` in SK and CZ quotes one unit at the market level. Return `market`, `source`, `checked_at`, `product_id`, and verified methods with nullable quoted cost and timing. Include pickup points supplied by the quote, preserving each method association. Destination-specific and standalone pickup-point lookup remain separate.
 
-- [ ] Add failing offline tests for required location input, unknown quote values, decimal currency amounts, empty method lists, unavailable responses, and market-specific tool discovery. Check that the request logging omits postal codes.
-- [ ] Run `npm run build && node --test test/client.test.js test/server.test.js` and confirm failures for the new behavior.
-- [ ] Implement the supported method through the shared request policy. Preserve upstream quote wording and keep unknown values nullable.
-- [ ] Rerun the focused tests and typecheck. Document supported markets, required inputs, and quote limitations in the README and changelog.
+- [x] Add offline tests for the one-unit quote body, product identity, unknown quote values, decimal currency amounts, empty method lists, method-to-place associations, unavailable responses, and market-specific tool discovery.
+- [x] Run `npm run build && node --test test/client.test.js test/server.test.js`. Six tests failed for the missing client method or tool registration.
+- [x] Implement the quote through the shared request policy. Preserve localized method and place names, quoted dates with offset, and nullable price and availability values.
+- [x] Rerun the focused tests and typecheck. Document supported markets, required inputs, and quote limitations in the README and changelog.
+
+**Verified:** All 58 focused tests and 139 full-suite tests passed, along with typecheck, the package install smoke test, and `git diff --check`. Both saved Task 6 quotes passed the new output contract with 44 SK and 204 CZ store locations. Quote implementation made no live probes.
 
 ## Task 8 — Record smaller leads and verify the delivered release
 

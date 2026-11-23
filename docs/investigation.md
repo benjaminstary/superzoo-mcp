@@ -172,3 +172,32 @@ Reduced SK response (selected fields):
 ```
 
 Each market returned one `nearestStore` with three `closestStores` entries and no pagination fields. The related list included the returned store at `0.0 Km` even when its reported coordinates differed from the request. The distance labels are in kilometers, and the observed zero indicates a branch-relative origin. The distance calculation and broader coverage remain unverified. These samples support a coordinate-only, single-branch lookup in SK and CZ. Independent branch-coordinate validation, caller-distance ranking, city filtering, and pagination remain open. The one exact Slovak stock ID match confirms equivalence for Bratislava Central. A broader stock join for either market needs more evidence. [Stock fixture](../test/fixtures/store-availability.json)
+
+## Anonymous product shipping quotes and pickup — 2026-11-23
+
+### APK trace
+
+| Hermes references | Request and dependencies |
+| --- | --- |
+| `#59233`, `#54267–#54268`, `#15444`, `#15449`, `#54272`, `#14779` | The product availability panel asks for one unit through a read query. `POST https://logistics.superzoo.cz/api/actions/calculate-product-shipping-options` sends `{ webId, product: { productId, quantity } }`. The quote call passes no location, account, cart, or reservation input. The panel's add-to-cart action is separate. |
+| `#15446–#15449`, `#54272` | The same logistics origin has a dedicated `GET /api/delivery/pickup-places` with an optional query object. The wrapper does not define the query keys. |
+| `#59281–#59286`, `#31322`, `#33912` | The product panel also reads pickup-method metadata from `https://read-model.superzoo.cz/collections/personal-pickup/webs/{webId}/languages/{language}/documents` and joins the items to quote methods by `personalPickupId`. The APK uses `superzoo_sk` with `sk` and `superzoo_cz` with `cs`. |
+| `#58768`, `#58774`, `#58777` | The checkout map and nearest pickup-place flows pass a basket hash and shipment hash to the storefront API. Checkout probes were skipped. |
+
+### Anonymous probes
+
+Five sequential HTTPS requests used a 12-second deadline, zero retries, and no redirect following, cookies, or credentials. Times are local to Europe/Bratislava. Both quote requests used public product `294-101115`, quantity `1`, and the locale's web ID.
+
+| Time | Request | Result |
+| --- | --- | --- |
+| 15:44:52 | SK product quote | HTTP 200 JSON. Two home-delivery methods and four pickup-method records. Packeta home delivery, ID `eed7a79d-1dc4-430f-bccd-ca291c8caaef`, quoted `3.99 EUR` including VAT for `2026-11-25T13:00:00+01:00`. `PERSONAL_PICKUP_SK` returned 44 store places. |
+| 15:44:52 | CZ product quote | HTTP 200 JSON. Three home-delivery methods and four pickup-method records. Zásilkovna home delivery, ID `23b3f7f3-17d6-4694-a5eb-9822de093d65`, quoted `99 CZK` including VAT for `2026-11-24T16:00:00+01:00`. `PERSONAL_PICKUP_CZ` returned 204 store places. |
+| 15:46:39 | SK and CZ pickup-method catalog, one GET each | Both HTTP 200 JSON. Each returned `items` and `totalCount: 4`. The nested `personalPickup` records supplied method IDs, names and store flags. All four IDs matched the quote in each market. |
+| 15:47:31 | Direct logistics pickup-place listing with no query | HTTP 401 JSON. The anonymous probe stopped at this response. Accepted query keys and authentication requirements remain unverified. |
+| — | PL | The APK trace did not establish a Polish configuration for these routes. |
+
+Each quote returned `shippingOptions.shipment.items` and `shippingOptions.items` echoing the requested product ID and quantity. `deliveryMethods` entries carry `deliveryMethodId`, localized `name`, `price.amountIncVat` as a decimal string, `price.currency`, `isPriceFrom`, and `deliveryDate`. Keep the quoted timestamp and the price qualifier. The timestamps describe market-level quotes. Address-specific availability and delivery commitments remain unverified.
+
+Entries in `personalPickups` carry `personalPickupId`, `name`, `isStore`, price, nullable method-level `deliveryDate`, and `places`. Sampled places had their own `pickupPlaceId`, parent `personalPickupId`, `name`, `isAvailable`, `deliveryDate`, and nullable `extraFee`. Store methods listed available places and had a null method-level date. Express delivery also appeared in this upstream group with `isStore: false`. Packeta and Zásilkovna parcel-point and locker methods returned empty `places` arrays despite quoting method-level prices and dates. The sample verifies associated store places for one product. Carrier point coverage, unavailable-place behavior, and the meaning of the observed store pickup times remain unverified.
+
+SK and CZ meet the Task 7 gate for a one-unit, market-level quote. The independent pickup-method catalog is a follow-up for localized method metadata. Standalone pickup-place listing remains unverified. Raw captures remain local.

@@ -147,6 +147,107 @@ test('store locator keeps branch identity when upstream coordinates are invalid 
   }]);
 });
 
+const quoteItem = { productId: '294-101115', quantity: 1 };
+const quoteInput = { product_id: quoteItem.productId };
+const shippingQuote = (options = {}) => ({ shippingOptions: {
+  shipment: { items: [quoteItem] }, items: [quoteItem], deliveryMethods: [], personalPickups: [], ...options,
+} });
+
+test('delivery quote sends one unit anonymously and preserves prices, dates and pickup associations', async () => {
+  const source = 'https://logistics.superzoo.cz/api/actions/calculate-product-shipping-options';
+  const price = { amountIncVat: '3.99', currency: 'EUR' };
+  const deliveryDate = '2026-11-25T13:00:00+01:00';
+  const client = clientWith(async (url, options) => {
+    assert.equal(String(url), source);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.headers.get('Content-Type'), 'application/json');
+    assert.equal(options.redirect, 'error');
+    assert.deepEqual(JSON.parse(options.body), { webId: 'superzoo_sk', product: quoteItem });
+    return response(shippingQuote({
+      deliveryMethods: [{ deliveryMethodId: 'eed7a79d-1dc4-430f-bccd-ca291c8caaef',
+        name: 'Packeta – Doručenie na adresu', price, deliveryDate, isPriceFrom: false }],
+      personalPickups: [
+        { personalPickupId: 'PERSONAL_PICKUP_SK', name: 'Osobný odber v predajni', isStore: true,
+          price: { ...price, amountIncVat: '0' }, deliveryDate: null,
+          places: [{ pickupPlaceId: 'SKPIC-880', personalPickupId: 'PERSONAL_PICKUP_SK', name: 'Trnava Storia',
+            isAvailable: true, deliveryDate: '2026-11-23T15:44:00+01:00', extraFee: null }] },
+        { personalPickupId: 'SKDEL-PACKETA', name: 'Packeta – Výdajné miesto', isStore: false,
+          price: { ...price, amountIncVat: '2.99' }, deliveryDate, places: [] },
+      ],
+    }));
+  });
+  const { checked_at, ...result } = await client.getDeliveryOptions(quoteInput);
+  assert.ok(Number.isFinite(Date.parse(checked_at)));
+  assert.deepEqual(result, {
+    ...quoteInput, market: 'SK', source,
+    delivery_methods: [{ method_id: 'eed7a79d-1dc4-430f-bccd-ca291c8caaef',
+      name: 'Packeta – Doručenie na adresu', price: { amount: '3.99', currency: 'EUR' },
+      delivery_date: deliveryDate, is_price_from: false }],
+    pickup_methods: [
+      { method_id: 'PERSONAL_PICKUP_SK', name: 'Osobný odber v predajni', is_store: true,
+        price: { amount: '0', currency: 'EUR' }, delivery_date: null,
+        places: [{ place_id: 'SKPIC-880', name: 'Trnava Storia', is_available: true,
+          delivery_date: '2026-11-23T15:44:00+01:00', extra_fee: null }] },
+      { method_id: 'SKDEL-PACKETA', name: 'Packeta – Výdajné miesto', is_store: false,
+        price: { amount: '2.99', currency: 'EUR' }, delivery_date: deliveryDate, places: [] },
+    ],
+  });
+});
+
+test('delivery quote keeps unknown optional fields nullable and preserves explicit false and zero', async () => {
+  const client = clientWith(async () => response(shippingQuote({
+    deliveryMethods: [{ deliveryMethodId: 'delivery', name: 'Courier',
+      price: { amountIncVat: '99', currency: 'CZK' }, deliveryDate: 'unknown', isPriceFrom: 'false' }],
+    personalPickups: [{ personalPickupId: 'pickup', name: 'Pickup', price: null, places: [
+      { pickupPlaceId: 'one', personalPickupId: 'pickup', name: 'One', isAvailable: false,
+        extraFee: { amountIncVat: '0.00', currency: 'EUR' } },
+      { pickupPlaceId: 'two', personalPickupId: 'pickup', name: 'Two' },
+    ] }],
+  })));
+  const result = await client.getDeliveryOptions(quoteInput);
+  assert.deepEqual(result.delivery_methods, [{
+    method_id: 'delivery', name: 'Courier', price: null, delivery_date: null, is_price_from: null,
+  }]);
+  assert.deepEqual(result.pickup_methods, [{
+    method_id: 'pickup', name: 'Pickup', price: null, delivery_date: null, is_store: null,
+    places: [
+      { place_id: 'one', name: 'One', is_available: false, delivery_date: null, extra_fee: { amount: '0.00', currency: 'EUR' } },
+      { place_id: 'two', name: 'Two', is_available: null, delivery_date: null, extra_fee: null },
+    ],
+  }]);
+});
+
+test('delivery quote distinguishes empty options from malformed, mismatched, and unavailable responses', async () => {
+  const empty = await clientWith(async () => response(shippingQuote())).getDeliveryOptions(quoteInput);
+  assert.deepEqual(empty.delivery_methods, []);
+  assert.deepEqual(empty.pickup_methods, []);
+  for (const payload of [
+    {},
+    shippingQuote({ deliveryMethods: null }),
+    shippingQuote({ shipment: { items: [{ ...quoteItem, productId: 'different' }] } }),
+    shippingQuote({ shipment: { items: [{ ...quoteItem, quantity: 2 }] } }),
+    shippingQuote({ items: [{ ...quoteItem, productId: 'different' }] }),
+    shippingQuote({ personalPickups: [{ personalPickupId: 'pickup', name: 'Pickup',
+      places: [{ pickupPlaceId: 'place', personalPickupId: 'other', name: 'Place' }] }] }),
+  ]) {
+    await assert.rejects(clientWith(async () => response(payload)).getDeliveryOptions(quoteInput), { code: 'invalid_response' });
+  }
+  const unavailable = clientWith(async () => new Response('', { status: 503, headers: { 'Retry-After': '60' } }));
+  await assert.rejects(unavailable.getDeliveryOptions(quoteInput), { code: 'upstream_unavailable' });
+});
+
+test('delivery quote rejects invalid input, unsupported markets, and cancellation before network access', async () => {
+  const fetchImpl = () => assert.fail('unexpected network access');
+  const client = clientWith(fetchImpl);
+  for (const input of [{}, { product_id: '../product' }, { ...quoteInput, postal_code: '81101' }]) {
+    await assert.rejects(client.getDeliveryOptions(input), { name: 'ZodError' });
+  }
+  const unsupported = new SuperzooClient({ country: 'PL', fetchImpl });
+  await assert.rejects(unsupported.getDeliveryOptions(quoteInput), { code: 'not_found' });
+  await assert.rejects(client.getDeliveryOptions(quoteInput, { signal: AbortSignal.abort() }), { code: 'cancelled' });
+});
+
 test('search excludes mixed types, forbidden products, duplicates and restricted price levels; reports partial failures', async () => {
   const product = { id: '294-101115', type: 'productCatalogue.product', title: 'Oil', alias: 'oil', attributes: { productSaleForbidden: ['false'], disallowedPriceLevels: [] } };
   const client = clientWith(async url => {

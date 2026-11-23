@@ -2,8 +2,8 @@ import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput } from './client.js';
-import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema,
+import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput } from './client.js';
+import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema, deliveryOptionsResultSchema,
   comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput } from './contracts.js';
 import type { RequestContext } from './contracts.js';
 import { compareProducts, findCommonStores } from './shopping.js';
@@ -65,6 +65,14 @@ export function createServer(client = new SuperzooClient()) {
         + 'Use get_product_availability for product stock.',
       inputSchema: findStoresInput, outputSchema: findStoresResultSchema, annotations,
     }, handleTool((args: z.input<typeof findStoresInput>, context) => client.findStores(args, context)));
+  }
+  if (client.market.deliveryQuoteWebId !== null) {
+    server.registerTool('get_delivery_options', {
+      description: `Quote delivery for one unit of a product variant in ${name}. `
+        + 'Returns market-level prices and dates plus pickup places supplied with each method. '
+        + 'The quote has no address-specific availability or delivery commitment.',
+      inputSchema: deliveryOptionsInput, outputSchema: deliveryOptionsResultSchema, annotations,
+    }, handleTool((args: z.input<typeof deliveryOptionsInput>, context) => client.getDeliveryOptions(args, context)));
   }
   return server;
 }
