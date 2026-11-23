@@ -126,3 +126,49 @@ Three sequential anonymous requests used `POST {storefront}/web-api/products/294
 Confidence is high for these observed code/text pairs, but they do not establish a complete enum, physical on-hand inventory, or quantities. `available` accompanies a short pickup window; `inStock` can still accompany a later pickup day. Neither raw code alone promises immediate pickup. Preserve the upstream status and pickup text separately. The existing conservative `all_in_stock` predicate remains literal `inStock` for every requested product, protected by a regression for `available`. Thus `all_in_stock: false` is not proof that a store cannot supply the products: inspect the per-product observations. No broader code mapping was inferred from timing text.
 
 Only these three requests were made for this follow-up. Raw captures and the request ledger remain local under `/private/tmp/superzoo-followup-evidence/`; no full store payloads are redistributed in this repository.
+
+## Anonymous store locator — 2026-11-23
+
+### APK trace
+
+Hermes v96 from the REA-extracted Super zoo 2.0.13 package ties the store repository to the locale's storefront `/web-api` base (`#14779`, `#37874`, `#15796`). The trace supports the official SK and CZ hosts. It did not establish a locator route for PL, whose product and stock endpoints were verified separately.
+
+| App call | Request relative to `/web-api` | Evidence |
+| --- | --- | --- |
+| Store detail | `GET /stores/{pickupPlaceId}` | `#15722` passes the branch selector to the route builder declared in `#14895`. Static trace only. |
+| Store filter | `POST /stores?limit=…&offset=…` | `#15726` forwards `filters`, `filterRegion`, `coordinates`, and `storeIds` in the JSON body. `#15843` supplies empty filters, null region and coordinates, and query defaults of `10` and `0`. `#56885` passes the selected region value and caller coordinates. `#45879` reads `results` and `totalCount`. Free-text city selection and live pagination remain unverified. |
+| Nearest store | `POST /stores/nearest-store` | `#15730` sends the coordinate object as the whole body. `#44407` builds it from device location as named `latitude` and `longitude` values in decimal degrees. `#55895` reads `nearestStore` from the response. |
+
+The nearest-store request coordinates describe the caller's search point. The response's top-level store latitude and longitude describe the returned branch. The app also uses branch coordinates for its map and distance display (`#56459`).
+
+### Anonymous probes
+
+One read-only nearest-store POST per traced market at 14:25:48 UTC (15:25:48 Europe/Bratislava). Both used public city-center coordinates and JSON with numeric `latitude` and `longitude`, without cookies, credentials, retries, or redirect following.
+
+| Market and selector | Status | Branch and shape | Stock ID comparison |
+| --- | --- | --- | --- |
+| SK, Bratislava center | HTTP 200 JSON | `SKPIC-400`, Bratislava Aupark Shopping Center, Einsteinova 18, Bratislava. Numeric branch coordinates, formatted hours and a seven-day hours list. | Related store `SKPIC-520` matches the ID, name and address of Bratislava Central in the saved stock fixture. The primary branch ID was absent from that fixture. |
+| CZ, Prague center | HTTP 200 JSON | `CZPIC-330`, Praha Podbaba, Pod Paťankou 2750/1c, Praha 6. Numeric branch coordinates. Both hours fields showed `0:00–0:00`; its meaning is unverified. | The saved stock evidence had no matching Czech branch record for comparison. |
+| PL | No probe | Official locator route, response shape and coverage remain unverified. | ID equivalence remains unverified. |
+
+Reduced SK response (selected fields):
+
+```json
+{
+  "nearestStore": {
+    "id": "SKPIC-400",
+    "name": "Bratislava Aupark Shopping Center",
+    "address": "Einsteinova 18, Bratislava",
+    "openingHoursList": [
+      {
+        "day": "monday",
+        "date": "2026-11-23T00:00:00+01:00",
+        "timeRanges": [{ "from": "10:00", "to": "21:00" }]
+      }
+    ],
+    "closestStores": [{ "id": "SKPIC-520", "distance": "3.2 Km" }]
+  }
+}
+```
+
+Each market returned one `nearestStore` with three `closestStores` entries and no pagination fields. The related list included the returned store at `0.0 Km` even when its reported coordinates differed from the request. The distance labels are in kilometers, and the observed zero indicates a branch-relative origin. The distance calculation and broader coverage remain unverified. These samples support a coordinate-only, single-branch lookup in SK and CZ. Independent branch-coordinate validation, caller-distance ranking, city filtering, and pagination remain open. The one exact Slovak stock ID match confirms equivalence for Bratislava Central. A broader stock join for either market needs more evidence. [Stock fixture](../test/fixtures/store-availability.json)

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { productInput, availabilityInput } from './client.js';
+import { productInput, availabilityInput, findStoresInput } from './client.js';
 
 export type RequestContext = { signal?: AbortSignal };
 
@@ -83,6 +83,18 @@ export const availabilityResultSchema = z.object({
   stores: z.array(store),
 });
 export type AvailabilityResult = z.output<typeof availabilityResultSchema>;
+
+export const findStoresResultSchema = z.object({
+  ...provenance,
+  market: market.exclude(['PL']),
+  coverage: z.literal('nearest_store'),
+  stores: z.array(z.object({
+    store_id: nonBlankText, name: nonBlankText, address: nonBlankText,
+    latitude: findStoresInput.shape.latitude.nullable().describe('Upstream branch latitude, when available.'),
+    longitude: findStoresInput.shape.longitude.nullable().describe('Upstream branch longitude, when available.'),
+  })).max(1),
+});
+export type FindStoresResult = z.output<typeof findStoresResultSchema>;
 
 const partialSearchProduct = z.object({
   product_id: productId, name: z.string(), description: nullableText, url: z.string(),

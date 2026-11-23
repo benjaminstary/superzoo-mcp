@@ -90,6 +90,63 @@ test('store lookup posts empty JSON and filters city with accents ignored', asyn
   assert.ok(result.stores.some(s => s.status === 'notAvailable'));
 });
 
+test('store locator sends an anonymous coordinate pair and returns only the nearest branch', async () => {
+  const source = 'https://www.superzoo.sk/web-api/stores/nearest-store';
+  const client = clientWith(async (url, options) => {
+    assert.equal(String(url), source);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.headers.get('Content-Type'), 'application/json');
+    assert.equal(options.headers.has('Authorization'), false);
+    assert.equal(options.headers.has('Cookie'), false);
+    assert.equal(options.redirect, 'error');
+    assert.deepEqual(JSON.parse(options.body), { latitude: 48.15, longitude: 17.11 });
+    return response(fixture('nearest-store'));
+  });
+  const { checked_at, ...result } = await client.findStores({ latitude: 48.15, longitude: 17.11 });
+  assert.ok(Number.isFinite(Date.parse(checked_at)));
+  assert.deepEqual(result, {
+    market: 'SK', source, coverage: 'nearest_store',
+    stores: [{
+      store_id: 'SKPIC-400', name: 'Bratislava Aupark Shopping Center', address: 'Einsteinova 18, Bratislava',
+      latitude: 48.133312, longitude: 17.106619,
+    }],
+  });
+});
+
+test('store locator rejects invalid inputs and unsupported markets before network access', async () => {
+  const fetchImpl = () => assert.fail('unexpected network access');
+  const client = clientWith(fetchImpl);
+  const valid = { latitude: 0, longitude: 0 };
+  for (const input of [{}, { latitude: 0 }, { longitude: 0 }, { ...valid, latitude: 91 },
+    { ...valid, longitude: -181 }, { ...valid, latitude: '0' }, { ...valid, longitude: Infinity },
+    { ...valid, city: 'Bratislava' }, { ...valid, limit: 1 }]) {
+    await assert.rejects(client.findStores(input), { name: 'ZodError' });
+  }
+  const unsupported = new SuperzooClient({ country: 'PL', fetchImpl });
+  await assert.rejects(unsupported.findStores(valid), /not supported in Poland/);
+});
+
+test('store locator distinguishes an explicit empty result from a malformed response', async () => {
+  const input = { latitude: 0, longitude: 0 };
+  const empty = await clientWith(async () => response({ nearestStore: null })).findStores(input);
+  assert.equal(empty.coverage, 'nearest_store');
+  assert.deepEqual(empty.stores, []);
+  for (const payload of [{}, { nearestStore: { id: ' ', name: 'Branch', address: 'Street' } }]) {
+    await assert.rejects(clientWith(async () => response(payload)).findStores(input), { code: 'invalid_response' });
+  }
+});
+
+test('store locator keeps branch identity when upstream coordinates are invalid or missing', async () => {
+  const client = clientWith(async () => response({
+    nearestStore: { id: 'SKPIC-400', name: 'Branch', address: 'Street', latitude: '48' },
+  }));
+  const result = await client.findStores({ latitude: 0, longitude: 0 });
+  assert.deepEqual(result.stores, [{
+    store_id: 'SKPIC-400', name: 'Branch', address: 'Street', latitude: null, longitude: null,
+  }]);
+});
+
 test('search excludes mixed types, forbidden products, duplicates and restricted price levels; reports partial failures', async () => {
   const product = { id: '294-101115', type: 'productCatalogue.product', title: 'Oil', alias: 'oil', attributes: { productSaleForbidden: ['false'], disallowedPriceLevels: [] } };
   const client = clientWith(async url => {

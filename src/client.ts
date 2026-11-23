@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { getMarket } from './config.js';
 import type { Market } from './config.js';
-import type { RequestContext, ProductResult, AvailabilityResult, SearchResult } from './contracts.js';
+import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult } from './contracts.js';
 import { createRequestPolicy } from './request.js';
 import { SuperzooError } from './errors.js';
 
@@ -40,6 +40,10 @@ export const searchInput = z.object({
   path: ['max_price'], message: 'Maximum price must be at least the minimum price',
 });
 export const availabilityInput = productInput.extend({ city: z.string().trim().min(1).max(100).optional() });
+export const findStoresInput = z.strictObject({
+  latitude: z.number().min(-90).max(90).describe('Latitude in decimal degrees.'),
+  longitude: z.number().min(-180).max(180).describe('Longitude in decimal degrees.'),
+});
 const nullableText = z.string().nullable().optional();
 const decimal = decimalText.nullable().optional();
 const nonBlankText = z.string().regex(/\S/);
@@ -92,6 +96,13 @@ const storesSchema = z.object({ items: z.array(z.object({
   id: z.string(), name: z.string(), address: z.string(), alias: z.string(), openingHours: nullableText,
   availability: z.object({ status: nullableText, text: nullableText }).nullable().optional(),
 })) });
+const nearestStoreSchema = z.object({
+  nearestStore: z.object({
+    id: nonBlankText, name: nonBlankText, address: nonBlankText,
+    latitude: findStoresInput.shape.latitude.nullable().catch(null).optional(),
+    longitude: findStoresInput.shape.longitude.nullable().catch(null).optional(),
+  }).nullable(),
+});
 const link = (market: Market, alias: string) => `${market.web}/${encodeURIComponent(alias)}/`;
 const fold = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
@@ -256,5 +267,28 @@ export class SuperzooClient {
       }));
     return { ...context(this.market, source, checked_at), product_id, city_filter: city ?? null,
       total_stores: data.items.length, stores };
+  }
+
+  async findStores(input: z.input<typeof findStoresInput>, requestContext: RequestContext = {}): Promise<FindStoresResult> {
+    const coordinates = findStoresInput.parse(input);
+    const market = this.market;
+    if (market.storeLocatorPath === null) {
+      throw new SuperzooError('not_found', `Store locator is not supported in ${market.name}`);
+    }
+    const source = `${market.web}${market.storeLocatorPath}`;
+    const { data, checked_at } = await this.policy.request({
+      market: market.country, operation: 'store_locator', url: source, schema: nearestStoreSchema,
+      init: { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(coordinates) },
+      ...requestContext,
+    });
+    const store = data.nearestStore;
+    return {
+      source, market: market.country, checked_at, coverage: 'nearest_store',
+      stores: store ? [{
+        store_id: store.id, name: store.name, address: store.address,
+        latitude: store.latitude ?? null, longitude: store.longitude ?? null,
+      }] : [],
+    };
   }
 }

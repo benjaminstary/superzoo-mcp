@@ -18,7 +18,7 @@ test('executable serves MCP handshake, tool listing and product lookup over clea
   transport.stderr.on('data', data => { stderr += data; });
   t.after(() => client.close());
   await client.connect(transport);
-  assert.equal((await client.listTools()).tools.length, 5);
+  assert.equal((await client.listTools()).tools.length, 6);
   const result = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.equal(result.structuredContent.price.amount, '13.99');
   await client.close();
@@ -53,7 +53,7 @@ test('stdio protocol cancellation reaches upstream work and leaves the connectio
   await rejected;
   await waitFor(() => stderr.includes('"status":"cancelled"'));
   assert.ok(stderr.includes('fixture-aborted'));
-  assert.equal((await client.listTools()).tools.length, 5);
+  assert.equal((await client.listTools()).tools.length, 6);
 });
 
 for (const requestId of [0, '']) {
@@ -89,7 +89,7 @@ for (const requestId of [0, '']) {
     // String "0" must keep its own ID while a numeric-zero request is active.
     await send({ id: '0', method: 'tools/list' });
     await waitFor(() => responses.has('0'));
-    assert.equal(responses.get('0').result.tools.length, 5);
+    assert.equal(responses.get('0').result.tools.length, 6);
 
     await send({ method: 'notifications/cancelled', params: { requestId } });
     await waitFor(() => stderr.includes('fixture-aborted'), 'upstream abort');
@@ -97,7 +97,7 @@ for (const requestId of [0, '']) {
 
     await send({ id: 1, method: 'tools/list' });
     await waitFor(() => responses.has(1));
-    assert.equal(responses.get(1).result.tools.length, 5);
+    assert.equal(responses.get(1).result.tools.length, 6);
     assert.equal(responses.has(requestId), false);
   });
 }

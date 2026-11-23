@@ -1,0 +1,10 @@
+{
+  "nearestStore": {
+    "id": "SKPIC-400",
+    "name": "Bratislava Aupark Shopping Center",
+    "address": "Einsteinova 18, Bratislava",
+    "latitude": 48.133312,
+    "longitude": 17.106619,
+    "closestStores": [{ "id": "SKPIC-520", "distance": "3.2 Km" }]
+  }
+}

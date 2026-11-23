@@ -7,6 +7,8 @@ Unreleased are merged but have not been included in a published release.
 
 ### Added
 
+- `find_stores` accepts latitude and longitude and returns up to one branch
+  selected by Super zoo in Slovakia and Czechia.
 - Product details, enriched search results, and comparisons include localized
   attributes, ratings on the upstream scale, and supplied current and original
   unit prices in the offer currency.

@@ -2,8 +2,8 @@ import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { SuperzooClient, searchInput, productInput, availabilityInput } from './client.js';
-import { productResultSchema, availabilityResultSchema, searchResultSchema,
+import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput } from './client.js';
+import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema,
   comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput } from './contracts.js';
 import type { RequestContext } from './contracts.js';
 import { compareProducts, findCommonStores } from './shopping.js';
@@ -58,5 +58,13 @@ export function createServer(client = new SuperzooClient()) {
       + 'Pickup text is separate from stock; quantities and branch prices are unknown.',
     inputSchema: commonStoresInput, outputSchema: commonStoresResultSchema, annotations,
   }, handleTool((args: z.input<typeof commonStoresInput>, context) => findCommonStores(client, args, context)));
+  if (client.market.storeLocatorPath !== null) {
+    server.registerTool('find_stores', {
+      description: `Find the Superzoo branch returned as nearest to a pair of coordinates in ${name}. `
+        + 'Returns up to one branch, with its ID, address, and available branch coordinates. '
+        + 'Use get_product_availability for product stock.',
+      inputSchema: findStoresInput, outputSchema: findStoresResultSchema, annotations,
+    }, handleTool((args: z.input<typeof findStoresInput>, context) => client.findStores(args, context)));
+  }
   return server;
 }

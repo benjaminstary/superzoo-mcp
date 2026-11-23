@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 
 const detail = JSON.parse(readFileSync(new URL('./fixtures/product-detail.json', import.meta.url)));
 
-test('MCP exposes five read-only tools, validates input and returns structured price data', async t => {
+test('MCP exposes six read-only tools in Slovakia, validates input and returns structured price data', async t => {
   const server = createServer(new SuperzooClient({ fetchImpl: async () => new Response(JSON.stringify(detail)) }));
   const client = new Client({ name: 'test', version: '1.0.0' });
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -16,7 +16,7 @@ test('MCP exposes five read-only tools, validates input and returns structured p
   await client.connect(b);
   t.after(async () => { await client.close(); await server.close(); });
   const { tools } = await client.listTools();
-  assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'get_product', 'get_product_availability', 'search_products']);
+  assert.deepEqual(tools.map(tool => tool.name).sort(), ['compare_products', 'find_common_stores', 'find_stores', 'get_product', 'get_product_availability', 'search_products']);
   assert.ok(tools.every(tool => tool.outputSchema?.type === 'object'));
   assert.ok(tools.find(tool => tool.name === 'search_products').inputSchema.properties.online_only);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint && !tool.annotations.destructiveHint));
@@ -51,6 +51,44 @@ async function connect(t, api) {
   t.after(async () => { await client.close(); await server.close(); });
   return client;
 }
+
+test('MCP advertises the Czech locator and validates coordinates before the request', async t => {
+  const calls = [];
+  const client = await connect(t, new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    calls.push([String(url), JSON.parse(options.body)]);
+    return new Response(JSON.stringify({ nearestStore: {
+      id: 'CZPIC-330', name: 'Praha Podbaba', address: 'Pod Paťankou 2750/1c, Praha 6',
+      latitude: 50.1125306, longitude: 14.3928678,
+    } }));
+  } }));
+  const { tools } = await client.listTools();
+  const locator = tools.find(tool => tool.name === 'find_stores');
+  assert.ok(locator);
+  assert.deepEqual(locator.inputSchema.required.sort(), ['latitude', 'longitude']);
+  const valid = { latitude: 50.08, longitude: 14.43 };
+  for (const args of [{ latitude: 50 }, { ...valid, longitude: 181 }, { ...valid, limit: 2 }]) {
+    const bad = await client.callTool({ name: 'find_stores', arguments: args });
+    assert.equal(bad.isError, true);
+    assert.match(bad.content[0].text, /Input validation error/);
+  }
+  assert.deepEqual(calls, []);
+  const result = await client.callTool({ name: 'find_stores', arguments: valid });
+  const source = 'https://www.superzoo.cz/web-api/stores/nearest-store';
+  assert.deepEqual(calls, [[source, valid]]);
+  assert.equal(result.isError, undefined);
+  assert.equal(result.structuredContent.source, source);
+  assert.equal(result.structuredContent.market, 'CZ');
+  assert.equal(result.structuredContent.coverage, 'nearest_store');
+  assert.equal(result.structuredContent.stores[0].store_id, 'CZPIC-330');
+  assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
+});
+
+test('MCP leaves the unverified Polish locator out of discovery', async t => {
+  const client = await connect(t, new SuperzooClient({ country: 'PL' }));
+  const { tools } = await client.listTools();
+  assert.equal(tools.length, 5);
+  assert.ok(!tools.some(tool => tool.name === 'find_stores'));
+});
 
 test('MCP handshake reports the package version', async t => {
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));

@@ -97,7 +97,7 @@ Environment variables work with both transports. For Windows or file-based confi
 node --env-file=.env dist/index.js
 ```
 
-The server does not load `.env` automatically. Bounded request diagnostics (market, operation, status, duration, cache hit) go to stderr, without queries, addresses, headers, or response bodies; stdout is reserved for MCP in stdio mode.
+The server does not load `.env` automatically. Bounded request diagnostics (market, operation, status, duration, cache hit) go to stderr. Diagnostic fields exclude queries, coordinates, addresses, headers, and response bodies. Stdio reserves stdout for MCP.
 
 ## Tools
 
@@ -108,6 +108,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `get_product_availability` | `product_id`, optional `city` | Store names, addresses, links, opening hours, stock status and pickup text |
 | `compare_products` | `product_ids` (1–10 unique variant IDs) | Input-ordered products with per-product errors and original fetch timestamps |
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
+| `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
 
 Example workflow:
 
@@ -123,7 +124,12 @@ Search filters and shopping examples (use IDs discovered in your selected market
 search_products({ query: "brit care", brand: "Brit Care", min_price: "0.10", max_price: "20.00", online_only: true, limit: 5 })
 compare_products({ product_ids: ["294-101115", "294-172197"] })
 find_common_stores({ product_ids: ["294-101115", "294-172197"], city: "Bratislava" })
+find_stores({ latitude: 48.15, longitude: 17.11 }) // SK, near central Bratislava
 ```
+
+`find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
+
+Use `get_product_availability` for stock. The saved Slovak evidence confirms that the locator and stock API use the same ID for Bratislava Central (`SKPIC-520)). Broader ID equivalence and caller distance remain unverified. [Store locator evidence](docs/investigation.md#anonymous-store-locator--2026-11-23)
 
 Brand matching is exact after case/accent normalization. Price bounds are inclusive nonnegative decimal strings; reversed ranges are rejected. Filters combine with AND. `online_only: true` requires explicit delivery status `available`; absent, unknown, or unavailable statuses are omitted. `can_buy` and branch stock do not establish delivery availability. `online_only: false` adds no delivery filter.
 

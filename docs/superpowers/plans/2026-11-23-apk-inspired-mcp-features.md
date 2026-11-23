@@ -56,20 +56,24 @@
 
 **Files:** `docs/investigation.md`.
 
-- [ ] Trace the app's store filter, nearest-store request, and store detail lookup through their base URL and inputs. Start at Hermes `#15722`, `#15726`, and `#15730`. Distinguish actual store coordinates from user-supplied coordinates.
-- [ ] For each market with a traced official route, probe one known city or public coordinate. Record returned IDs, location fields, addresses, hours, and pagination. Compare IDs against saved stock observations for a known branch in that market. Record any market where coordinate order, units, coverage, or ID equivalence remains unknown.
-- [ ] Record the supported inputs and a reduced response example. Task 3 requires at least one verified public lookup and stable store IDs. Distance requires independently verified coordinates or documented response units. Joining stock results requires verified shared IDs.
+- [x] Trace the app's store filter, nearest-store request, and store detail lookup through their base URL and inputs. Start at Hermes `#15722`, `#15726`, and `#15730`. Distinguish actual store coordinates from user-supplied coordinates.
+- [x] For each market with a traced official route, probe one known city or public coordinate. Record returned IDs, location fields, addresses, hours, and pagination. Compare IDs against saved stock observations for a known branch in that market. Record any market where coordinate order, units, coverage, or ID equivalence remains unknown.
+- [x] Record the supported inputs and a reduced response example. Task 3 requires at least one verified public lookup and stable store IDs. Distance requires independently verified coordinates or documented response units. Joining stock results requires verified shared IDs.
+
+**Verified:** SK and CZ each returned HTTP 200 and a single nearest branch with a store ID and public address. SK has one exact branch ID match in the response's related stores and the saved stock fixture. CZ stock ID equivalence and the PL locator remain unverified. Task 3 can proceed with coordinate-only nearest-store lookup in SK and CZ. City filtering, pagination, caller distance, and broader stock joins remain open. [Trace and probe evidence](../../investigation.md#anonymous-store-locator--2026-11-23)
 
 ## Task 3 — Implement the verified store locator
 
-**Files:** `src/client.ts`, `src/contracts.ts`, `src/server.ts`, `test/client.test.js`, `test/server.test.js`, `README.md`, `CHANGELOG.md`.
+**Files:** `src/client.ts`, `src/config.ts`, `src/contracts.ts`, `src/request.ts`, `src/server.ts`, client and protocol tests, `README.md`, `CHANGELOG.md`.
 
-**Proposed interface:** `find_stores({ city?, latitude?, longitude?, limit? })`. Use only inputs supported by the Task 2 evidence. Require at least one supported selector. Require coordinates as a pair and validate latitude to ±90 and longitude to ±180. Default to 10 results, with a maximum of 25. Return `market`, `source`, `checked_at`, `coverage`, and stores with stable IDs, names, addresses, and verified optional details. Include `distance_km` only where distance is verified or calculated from validated coordinates.
+**Verified interface:** `find_stores({ latitude, longitude })` for SK and CZ. Require both coordinates in decimal degrees and validate latitude to ±90 and longitude to ±180. Return `market`, `source`, `checked_at`, `coverage: "nearest_store"`, and up to one store with its ID, name, address, and nullable branch coordinates. City, limits, pagination, and caller distance remain deferred.
 
-- [ ] Add failing client and protocol tests for the verified request, selector validation, missing coordinates, limits, coverage, and an empty result. If distance ships, test nearest-first order and the treatment of stores without coordinates. For an unsupported market, assert that the locator is absent from tool discovery.
-- [ ] Run `npm run build && node --test test/client.test.js test/server.test.js` and confirm failures for the new behavior.
-- [ ] Implement `SuperzooClient.findStores` with the shared request policy and a fixed market-to-route mapping backed by Task 2. Publish the success schema through `createServer` for verified markets. Keep availability in the existing stock tools and document the ID join where verified.
-- [ ] Rerun the focused tests and typecheck. Update the README and changelog with supported markets and coverage.
+- [x] Add client and protocol tests for the anonymous request, required and bounded inputs, rejection of extra selectors, coverage, empty versus malformed responses, optional branch coordinates, and Polish tool discovery.
+- [x] Run `npm run build && node --test test/client.test.js test/server.test.js` and confirm failures for the new behavior.
+- [x] Implement `SuperzooClient.findStores` with the shared request policy, cancellation, and a fixed market-to-route mapping. Publish the success schema through `createServer` for SK and CZ. Document the verified Bratislava Central stock ID match and keep stock lookups in the existing tools.
+- [x] Rerun the focused tests and typecheck. Update the README and changelog with supported markets and coverage.
+
+**Verified:** Six tests failed before implementation. All 53 focused tests and all 134 tests in `npm test` passed afterward, along with typecheck and `git diff --check`. Offline fixtures use the Task 2 captures. An explicit `nearestStore: null` yields an empty list. An absent field or malformed branch identity yields `invalid_response`.
 
 ## Task 4 — Verify anonymous category browsing
 

@@ -43,7 +43,7 @@ test('packed npm package installs and serves MCP through its consumer executable
   assert.equal(client.getServerVersion().version, manifest.version);
   const tools = await client.listTools();
   assert.deepEqual(tools.tools.map(tool => tool.name).sort(),
-    ['compare_products', 'find_common_stores', 'get_product', 'get_product_availability', 'search_products']);
+    ['compare_products', 'find_common_stores', 'find_stores', 'get_product', 'get_product_availability', 'search_products']);
   assert.ok(tools.tools.every(tool => tool.outputSchema?.type === 'object'));
   const product = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.equal(product.isError, undefined, diagnostics);

@@ -1,10 +1,11 @@
 import { isIP } from 'node:net';
 
+const NEAREST_STORE_PATH = '/web-api/stores/nearest-store';
 const MARKETS = Object.freeze({
-  SK: Object.freeze({ country: 'SK', name: 'Slovakia', web: 'https://www.superzoo.sk', language: 'sk', currency: 'EUR', priceLevel: '22' }),
-  CZ: Object.freeze({ country: 'CZ', name: 'Czechia', web: 'https://www.superzoo.cz', language: 'cs', currency: 'CZK', priceLevel: '1' }),
+  SK: Object.freeze({ country: 'SK', name: 'Slovakia', web: 'https://www.superzoo.sk', language: 'sk', currency: 'EUR', priceLevel: '22', storeLocatorPath: NEAREST_STORE_PATH }),
+  CZ: Object.freeze({ country: 'CZ', name: 'Czechia', web: 'https://www.superzoo.cz', language: 'cs', currency: 'CZK', priceLevel: '1', storeLocatorPath: NEAREST_STORE_PATH }),
   // The Polish default price level is unverified. Search only returns unrestricted candidates.
-  PL: Object.freeze({ country: 'PL', name: 'Poland', web: 'https://superzoo.com.pl', language: 'pl', currency: 'PLN', priceLevel: null }),
+  PL: Object.freeze({ country: 'PL', name: 'Poland', web: 'https://superzoo.com.pl', language: 'pl', currency: 'PLN', priceLevel: null, storeLocatorPath: null }),
 });
 
 export type Country = keyof typeof MARKETS;
