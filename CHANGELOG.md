@@ -5,6 +5,12 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+### Added
+
+- Product details, enriched search results, and comparisons include localized
+  attributes, ratings on the upstream scale, and supplied current and original
+  unit prices in the offer currency.
+
 ### Fixed
 
 - Stdio cancellation stops upstream work for MCP requests with ID `0` or an

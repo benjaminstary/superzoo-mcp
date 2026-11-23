@@ -1,0 +1,8 @@
+{
+  "rating": { "rating": 90, "ratingCount": 23 },
+  "parameters": [{ "name": "Gramatura", "value": "3 kg", "position": 1 }],
+  "price": {
+    "sellUnitPrice": { "unitPrice": "2.83", "unitSize": "100", "unit": "g" },
+    "originalUnitPrice": { "unitPrice": "2.83", "unitSize": "100", "unit": "g" }
+  }
+}

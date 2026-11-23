@@ -15,9 +15,10 @@ const ids = Array.from({ length: 10 }, (_, i) => `item-${i}`);
 const product = product_id => ({
   source: `${market.web}/web-api/products/${product_id}`, market: 'SK', checked_at: oldTime,
   product_id, name: 'Food', url: `${market.web}/food/`, ean: null, catalogue_number: null,
-  brand: null, can_buy: null, price: {
+  brand: null, can_buy: null, rating: null, attributes: [], price: {
     amount: '13.99', currency: 'EUR', context: 'public_online', variant: 'family',
     original_amount: '15.99', lowest_amount: null, sale_percentage: null, voucher_campaign: null,
+    unit_price: null, original_unit_price: null,
   }, variants: [], availability: null,
 });
 const store = (store_id, status = 'inStock', name = `Store ${store_id}`) => ({
@@ -252,15 +253,20 @@ test('common stores reject invalid city filters before lookup', async () => {
   assert.equal(calls, 0);
 });
 
-test('comparison reuses cached products without refreshing per-product timestamps', async () => {
-  const fixture = JSON.parse(readFileSync(new URL('./fixtures/product-detail.json', import.meta.url)));
+test('comparison reuses enriched cached products with their original timestamps', async () => {
+  const detail = JSON.parse(readFileSync(new URL('./fixtures/product-detail.json', import.meta.url)));
+  const enrichment = JSON.parse(readFileSync(new URL('./fixtures/product-detail-enrichment.json', import.meta.url)));
   let calls = 0;
   const client = new SuperzooClient({ fetchImpl: async () => {
     calls++;
-    return new Response(JSON.stringify(fixture));
+    return new Response(JSON.stringify({ ...detail, ...enrichment, price: { ...detail.price, ...enrichment.price } }));
   } });
   const original = await client.getProduct({ product_id: '294-101115' });
   const result = await compareProducts(client, { product_ids: ['294-101115'] });
   assert.equal(calls, 1);
-  assert.equal(result.products[0].product.checked_at, original.checked_at);
+  const product = result.products[0].product;
+  assert.deepEqual(product, original);
+  assert.deepEqual(product.rating, { value: 90, count: 23 });
+  assert.deepEqual(product.attributes, [{ name: 'Gramatura', value: '3 kg' }]);
+  assert.deepEqual(product.price.unit_price, { amount: '2.83', unit_size: '100', unit: 'g' });
 });

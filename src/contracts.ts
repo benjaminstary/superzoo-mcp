@@ -8,7 +8,9 @@ const market = z.enum(['SK', 'CZ', 'PL']);
 const timestamp = z.iso.datetime();
 const nullableText = z.string().nullable();
 const upstreamText = nullableText.optional();
-const decimal = z.string().regex(/^\d+(?:\.\d+)?$/).nullable();
+const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
+const decimal = decimalText.nullable();
+const nonBlankText = z.string().regex(/\S/);
 const count = z.number().int().nonnegative();
 const provenance = { source: z.string(), market, checked_at: timestamp };
 
@@ -19,6 +21,11 @@ export const toolErrorSchema = z.object({
   retryable: z.boolean(),
 });
 
+const unitPrice = z.object({
+  amount: decimalText,
+  unit_size: z.string().regex(/^(?=.*[1-9])\d+(?:\.\d+)?$/),
+  unit: nonBlankText,
+}).nullable();
 const price = z.object({
   amount: decimal,
   currency: z.enum(['EUR', 'CZK', 'PLN']),
@@ -26,6 +33,8 @@ const price = z.object({
   variant: nullableText,
   original_amount: decimal,
   lowest_amount: decimal,
+  unit_price: unitPrice,
+  original_unit_price: unitPrice,
   // These upstream fields are opaque today; preserve them without claiming a shape.
   sale_percentage: z.unknown(),
   voucher_campaign: z.unknown(),
@@ -46,6 +55,8 @@ export const productResultSchema = z.object({
   catalogue_number: nullableText,
   brand: nullableText,
   can_buy: z.boolean().nullable(),
+  rating: z.object({ value: z.number().nonnegative(), count }).nullable(),
+  attributes: z.array(z.object({ name: nonBlankText, value: nonBlankText })),
   price,
   variants: z.array(z.object({
     variantName: z.string(),

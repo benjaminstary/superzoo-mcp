@@ -11,6 +11,7 @@ import { SuperzooError, toToolError } from '../dist/errors.js';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url)));
 const detail = fixture('product-detail');
+const enrichment = fixture('product-detail-enrichment');
 const stock = fixture('store-availability');
 const response = data => new Response(JSON.stringify(data));
 const productId = '294-101115';
@@ -67,10 +68,27 @@ test('search schema accepts enriched, partial and empty client results without r
       if (String(url).includes('full-text-search')) return response({ totalCount: 2, items: [
         { id: productId, title: 'Oil', alias: 'oil', type: 'productCatalogue.product' },
       ] });
-      return failDetail ? new Response('', { status: 503 }) : response(detail);
+      return failDetail ? new Response('', { status: 404 }) : response({
+        ...detail, ...enrichment, price: { ...detail.price, ...enrichment.price },
+      });
     } });
     const result = await searchClient.searchProducts({ query: 'oil' });
     assert.deepEqual(searchResultSchema.parse(result), result);
+    const [product] = result.products;
+    if (failDetail) {
+      assert.deepEqual(Object.keys(product).sort(), [
+        'availability', 'description', 'detail_error', 'name', 'price', 'product_id', 'url',
+      ]);
+      assert.equal(product.price, null);
+    } else {
+      assert.deepEqual(product.rating, { value: 90, count: 23 });
+      assert.deepEqual(product.attributes, [{ name: 'Gramatura', value: '3 kg' }]);
+      assert.deepEqual(product.price.unit_price, { amount: '2.83', unit_size: '100', unit: 'g' });
+      assert.equal(productResultSchema.safeParse({ ...product, rating: { value: 90, count: -1 } }).success, false);
+      assert.equal(productResultSchema.safeParse({ ...product, price: {
+        ...product.price, unit_price: { amount: '2.83', unit_size: '0', unit: 'g' },
+      } }).success, false);
+    }
     assert.deepEqual(searchResultSchema.parse({ ...result, products: [] }).products, []);
     const filtered = { ...result, filters_applied: { brand: 'Brit Care', min_price: '0.10', max_price: '10.00' },
       products_checked: 2, coverage: 'bounded_candidates' };

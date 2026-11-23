@@ -104,7 +104,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | Tool | Arguments | Returns |
 | --- | --- | --- |
 | `search_products` | `query`, optional `limit` (default 10, max 50), `brand`, `min_price`, `max_price`, `online_only` | Product IDs, links, price offers, variants, and availability summaries |
-| `get_product` | `product_id` | Product identity, brand, EAN, variants, price offer, delivery and available-store count |
+| `get_product` | `product_id` | Product identity, brand, EAN, variants, rating, localized attributes, price offer, delivery and available-store count |
 | `get_product_availability` | `product_id`, optional `city` | Store names, addresses, links, opening hours, stock status and pickup text |
 | `compare_products` | `product_ids` (1–10 unique variant IDs) | Input-ordered products with per-product errors and original fetch timestamps |
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
@@ -129,6 +129,8 @@ Brand matching is exact after case/accent normalization. Price bounds are inclus
 
 Price filters use the returned offer amount, including conditional `familyPrice` offers. Check `price.variant` before relying on a match.
 
+Product details, enriched search results, and successful comparison entries include `rating` and `attributes`. The rating is either `null` or `{ value, count }`. The value uses the upstream scale, whose maximum is unverified. Attributes are localized `{ name, value }` pairs in upstream order. An empty list means no valid pairs were supplied.
+
 Search filters apply locally to enriched candidates within the first 200 upstream items, preserving upstream order. `coverage: "bounded_candidates"` means omitted candidates may contain matches. `filters_applied` echoes normalized supplied filters; `products_checked` counts attempted detail lookups, including cache hits and failures; `detail_failures` counts failed lookups. When filters are active, failed or missing required fields exclude a candidate. With no active filters, detail failures retain discovery data with `price: null` and `detail_error`.
 
 Both batch tools return `complete: false` when any product lookup fails, with per-product stable errors. Comparison preserves input order. Common-store results include the union of observed stores and an entry for every requested product at each store. Missing observations have null status/timestamp; failed lookups also carry an error. `all_in_stock` is true only when every requested product explicitly has status `inStock` at that store. Store identity uses its ID; first successful observation in input order supplies display metadata. Stock never guarantees pickup timing. Observed raw `available` values can include pickup within hours, while `inStock` can include a later day. The conservative `all_in_stock: false` does not prove a store cannot supply the products; inspect each status and pickup text. See the [branch-status evidence](docs/investigation.md#branch-status-follow-up-2026-11-07).
@@ -138,6 +140,7 @@ Every tool publishes a success output schema and returns the same data as JSON t
 ## Prices, stock, and limits
 
 - Prices come from anonymous online lookups in the market's currency. Decimal amounts remain strings. `price.context` is `public_online`; `price.variant` preserves the upstream offer label. **A `familyPrice` offer can appear without login and may require membership.** It is not proof of your eligibility or a physical-store price. `original_amount` and `lowest_amount` preserve upstream reference prices when present.
+- A present `price` includes `unit_price` and `original_unit_price`, each `null` when unavailable. A supplied unit price has `amount`, `unit_size`, and `unit` strings. For example, `{ amount: "2.83", unit_size: "100", unit: "g" }` means 2.83 in the offer currency per 100 g. `unit_price` inherits the current offer's eligibility context.
 - Stock is a status, not an exact quantity. `quantity` is always `null`; missing stock status becomes `unknown`. Stock status and `pickup_text` stay separate: an in-stock product may only be ready tomorrow.
 - Single-product, availability, and search results include `market`, `source`, and an ISO `checked_at` timestamp. Batch results include `market` and a completion `checked_at`; nested products and store observations retain their own retrieval timestamps. Successful validated details cache for 60 seconds and raw stock for 15 seconds, in one 256-entry in-memory LRU cache per client. Cache hits retain the original `checked_at`; expired data and failures are never served from cache. Prices and stock can change afterward; these tools never reserve products.
 - City filtering matches store names and addresses locally, ignoring case and accents. It does not measure distance or establish municipal boundaries. Pickup text remains in the shop's language.
@@ -148,7 +151,7 @@ Every tool publishes a success output schema and returns the same data as JSON t
 - Each upstream operation has a 15-second total deadline, including queueing, retries, and response validation. At most two attempts retry network failures and HTTP 429/502/503/504. Valid `Retry-After` seconds/dates are honored only if the delay fits the deadline; otherwise the current error returns. Without a valid header, jitter is 200–500 ms. Validation errors, cancellation, and other HTTP statuses are not retried. Multi-step searches/batches can take longer than one operation deadline.
 - Identical detail/stock lookups share in-flight work. Each caller cancels independently; upstream work stops when no callers remain. SDK cancellation propagates over stdio; closing an HTTP response cancels that request's handlers. Cancellation stops queued enrichment rather than returning an apparently complete batch. City filtering runs after raw stock retrieval, including cache hits. Markets never share cache entries or upstream work.
 - HTTP request bodies are limited to 64 KiB. Remote request limits and authentication belong to your deployment infrastructure.
-- Unit prices, distance ranking, full-catalog search/pagination, and Polish price-level changes remain deferred pending further evidence. Account features are outside scope.
+- Distance ranking, full-catalog search/pagination, and Polish price-level changes remain deferred pending further evidence. Account features are outside scope.
 - These are undocumented upstream APIs. They may change. There are no account, cart, ordering, or mutation tools.
 
 ## Docker

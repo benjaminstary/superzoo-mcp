@@ -31,11 +31,13 @@ export function createServer(client = new SuperzooClient()) {
       + 'Default 10, max 50 results. Search checks up to 200 mixed candidates; upstream totals are not product counts. '
       + 'Optional brand and inclusive decimal price filters apply within this bounded window; omitted candidates may contain matches. '
       + 'online_only requires explicit delivery availability. Conditional offers remain conditional. '
+      + 'Enriched products include ratings, localized attributes, and unit prices when supplied. '
       + 'Partial detail failures are marked on each product. Use variant-specific product IDs for stock lookups.',
     inputSchema: searchInput, outputSchema: searchResultSchema, annotations,
   }, handleTool((args: z.input<typeof searchInput>, context) => client.searchProducts(args, context)));
   server.registerTool('get_product', {
     description: `Get product details, variants, public online ${currency} offers in ${name}, delivery availability and available-store count. `
+      + 'Includes localized attributes, ratings on the upstream scale, and unit prices when supplied. '
       + 'Price variant identifies conditional offers such as familyPrice; membership eligibility and branch prices are not verified.',
     inputSchema: productInput, outputSchema: productResultSchema, annotations,
   }, handleTool((args: z.input<typeof productInput>, context) => client.getProduct(args, context)));
@@ -46,6 +48,7 @@ export function createServer(client = new SuperzooClient()) {
   }, handleTool((args: z.input<typeof availabilityInput>, context) => client.getProductAvailability(args, context)));
   server.registerTool('compare_products', {
     description: `Compare one to ten unique product variants in ${name}, preserving input order and conditional ${currency} offers. `
+      + 'Includes ratings, localized attributes, and unit prices when supplied. '
       + 'Partial failures remain explicit. Product checked_at values retain their original retrieval times.',
     inputSchema: productBatchInput, outputSchema: comparisonResultSchema, annotations,
   }, handleTool((args: z.input<typeof productBatchInput>, context) => compareProducts(client, args, context)));

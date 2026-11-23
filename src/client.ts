@@ -42,8 +42,23 @@ export const searchInput = z.object({
 export const availabilityInput = productInput.extend({ city: z.string().trim().min(1).max(100).optional() });
 const nullableText = z.string().nullable().optional();
 const decimal = decimalText.nullable().optional();
+const nonBlankText = z.string().regex(/\S/);
+const ratingSchema = z.object({
+  rating: z.number().nonnegative(),
+  ratingCount: z.number().int().nonnegative(),
+}).nullable().catch(null).optional();
+const parameterSchema = z.object({
+  name: nonBlankText,
+  value: nonBlankText,
+}).nullable().catch(null);
+const unitPriceSchema = z.object({
+  unitPrice: decimalText,
+  unitSize: z.string().regex(/^(?=.*[1-9])\d+(?:\.\d+)?$/),
+  unit: nonBlankText,
+}).nullable().catch(null).optional();
 const priceSchema = z.object({
   sellPrice: decimal, originalPrice: decimal, calculatedLowestPrice: decimal, variant: nullableText,
+  sellUnitPrice: unitPriceSchema, originalUnitPrice: unitPriceSchema,
 }).passthrough().nullable().optional();
 const detailSchema = z.object({
   product: z.object({ id: idSchema, name: z.string().min(1), alias: z.string().min(1),
@@ -51,6 +66,8 @@ const detailSchema = z.object({
     brand: z.object({ name: z.string() }).passthrough().nullable().optional(),
   }).passthrough(),
   price: priceSchema,
+  rating: ratingSchema,
+  parameters: z.array(parameterSchema).catch([]).optional(),
   variants: z.array(z.object({
     variantName: z.string(),
     variants: z.array(z.object({ id: idSchema, name: z.string(), alias: z.string(),
@@ -83,11 +100,18 @@ export function matchesStoreCity(store: { name: string; address: string }, city:
 }
 
 const context = (market: Market, source: string, checked_at: string) => ({ source, market: market.country, checked_at });
+const publicUnitPrice = (price: z.output<typeof unitPriceSchema>) => price ? {
+  amount: price.unitPrice,
+  unit_size: price.unitSize,
+  unit: price.unit,
+} : null;
 const publicPrice = (market: Market, price: z.output<typeof priceSchema>) => price ? {
   amount: price.sellPrice ?? null,
   currency: market.currency, context: 'public_online' as const, variant: price.variant ?? null,
   original_amount: price.originalPrice ?? null,
   lowest_amount: price.calculatedLowestPrice ?? null,
+  unit_price: publicUnitPrice(price.sellUnitPrice),
+  original_unit_price: publicUnitPrice(price.originalUnitPrice),
   sale_percentage: price.salePercentage ?? null,
   voucher_campaign: price.voucherCampaign ?? null,
 } : null;
@@ -126,6 +150,8 @@ export class SuperzooClient {
       url: link(this.market, data.product.alias), ean: data.product.ean ?? null,
       catalogue_number: data.product.catalogueNumber ?? null,
       brand: data.product.brand?.name ?? null, can_buy: data.product.canBuy ?? null,
+      rating: data.rating ? { value: data.rating.rating, count: data.rating.ratingCount } : null,
+      attributes: (data.parameters ?? []).filter(parameter => parameter !== null),
       price: publicPrice(this.market, data.price), variants: data.variants ?? [],
       availability: data.availability ?? null,
     };

@@ -6,6 +6,7 @@ import { searchResultSchema } from '../dist/contracts.js';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url)));
 const detail = fixture('product-detail');
+const enrichment = fixture('product-detail-enrichment');
 const stores = fixture('store-availability');
 const response = data => new Response(JSON.stringify(data));
 const clientWith = fetchImpl => new SuperzooClient({ fetchImpl });
@@ -21,7 +22,54 @@ test('product preserves decimal price context, variant IDs, and availability sep
   assert.equal(result.price.context, 'public_online');
   assert.equal(result.variants[0].variants[1].id, '294-101116');
   assert.equal(result.availability.availableStoresCount, 44);
+  assert.equal(result.rating, null);
+  assert.deepEqual(result.attributes, []);
+  assert.equal(result.price.unit_price, null);
+  assert.equal(result.price.original_unit_price, null);
   assert.ok(Date.parse(result.checked_at));
+});
+
+test('product exposes localized details and upstream unit prices in the offer currency', async () => {
+  const client = new SuperzooClient({ country: 'PL', fetchImpl: async () => response({
+    ...detail, ...enrichment, price: { ...detail.price, ...enrichment.price, sellPrice: '84.99' },
+  }) });
+  const result = await client.getProduct({ product_id: detail.product.id });
+  assert.deepEqual(result.rating, { value: 90, count: 23 });
+  assert.deepEqual(result.attributes, [{ name: 'Gramatura', value: '3 kg' }]);
+  assert.equal(result.price.currency, 'PLN');
+  assert.deepEqual(result.price.unit_price, { amount: '2.83', unit_size: '100', unit: 'g' });
+  assert.deepEqual(result.price.original_unit_price, result.price.unit_price);
+});
+
+test('malformed optional details leave valid attributes, prices, and product data intact', async () => {
+  for (const badUnit of [{ unit: undefined }, { unitSize: '0.00' }, { unitSize: '-1' }, { unitPrice: 2.83 }]) {
+    const client = clientWith(async () => response({
+      ...detail,
+      rating: { rating: 90, ratingCount: '23' },
+      parameters: [null, { name: 'Typ', value: 'Karma', position: 2 }, { name: 'Broken', value: 5 },
+        { name: ' ', value: 'Unknown' }, ...enrichment.parameters],
+      price: { ...detail.price, variant: 'familyPrice',
+        sellUnitPrice: { ...enrichment.price.sellUnitPrice, ...badUnit },
+        originalUnitPrice: { unitPrice: '1.230', unitSize: '0.50', unit: 'kg' } },
+    }));
+    const result = await client.getProduct({ product_id: detail.product.id });
+    assert.equal(result.name, detail.product.name);
+    assert.equal(result.rating, null);
+    assert.deepEqual(result.attributes, [{ name: 'Typ', value: 'Karma' }, { name: 'Gramatura', value: '3 kg' }]);
+    assert.equal(result.price.amount, '13.99');
+    assert.equal(result.price.variant, 'familyPrice');
+    assert.equal(result.price.unit_price, null);
+    assert.deepEqual(result.price.original_unit_price, { amount: '1.230', unit_size: '0.50', unit: 'kg' });
+  }
+});
+
+test('valid optional details survive an absent price and malformed parameter list', async () => {
+  const { price, ...unpriced } = detail;
+  const client = clientWith(async () => response({ ...unpriced, rating: enrichment.rating, parameters: {} }));
+  const result = await client.getProduct({ product_id: detail.product.id });
+  assert.equal(result.price, null);
+  assert.deepEqual(result.rating, { value: 90, count: 23 });
+  assert.deepEqual(result.attributes, []);
 });
 
 test('store lookup posts empty JSON and filters city with accents ignored', async () => {
