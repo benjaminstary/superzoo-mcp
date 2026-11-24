@@ -2,9 +2,8 @@ import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { browseProductsInputs } from './categories.js';
-import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput,
-  listProductCategoriesInput } from './client.js';
+import { browseProductsInput, listProductCategoriesInput } from './categories.js';
+import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput } from './client.js';
 import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema, deliveryOptionsResultSchema,
   comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput,
   listProductCategoriesResultSchema, browseProductsResultSchema } from './contracts.js';
@@ -78,17 +77,19 @@ export function createServer(client = new SuperzooClient()) {
     }, handleTool((args: z.input<typeof deliveryOptionsInput>, context) => client.getDeliveryOptions(args, context)));
   }
   if (client.market.country !== 'PL') {
-    const browseProductsInput = browseProductsInputs[client.market.country];
     server.registerTool('list_product_categories', {
-      description: `List supported browsing categories in ${name} with valid facet keys and values.`,
+      description: `List product categories and departments in ${name}. Pass category_id, a keyword query, or both to discover live filters and sorts. `
+        + 'Use the returned exact parameter keys and values, ID filters, and numeric ranges in browse_products. '
+        + 'Counts cover catalogue candidates before eligibility checks.',
       inputSchema: listProductCategoriesInput, outputSchema: listProductCategoriesResultSchema, annotations,
-    }, handleTool((args: z.input<typeof listProductCategoriesInput>) => client.listProductCategories(args)));
+    }, handleTool((args: z.input<typeof listProductCategoriesInput>, context) => client.listProductCategories(args, context)));
     server.registerTool('browse_products', {
-      description: `Browse one page of a supported product category in ${name}. Use list_product_categories for the category ID and facet values. `
-        + 'Use optional facets listed for the selected category. Different facet keys must all match. Defaults to page 1. '
+      description: `Browse one catalogue page in ${name} by category_id, keyword query, or both. Use list_product_categories to discover filters for the same scope. `
+        + 'Different parameter keys must all match. Multiple choices for one key are alternatives. '
+        + 'Catalogue prices and sorting can differ from public offers. Use get_product to confirm current prices and get_product_availability for branch stock. '
         + 'Use offer to find advertised sales, Family member prices, or both. Offer filtering checks the current page and includes published pack and unit prices when supplied. '
         + 'Family prices require membership. The published unit price may reflect the regular price. '
-        + 'Pass next_page with the same category, facets, and offer filter, including after an empty offer page. '
+        + 'Pass next_page with the same inputs, including after an empty page. Keyword coverage is bounded to 200 upstream candidates. '
         + 'Checks up to ten candidates for publication and local public sale eligibility. '
         + 'The upstream total counts matches before eligibility and offer checks. Use get_product for full details.',
       inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,

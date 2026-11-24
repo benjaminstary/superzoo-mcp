@@ -1,4 +1,5 @@
 export type ToolErrorCode =
+  | 'invalid_input'
   | 'not_found'
   | 'rate_limited'
   | 'upstream_unavailable'

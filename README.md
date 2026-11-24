@@ -110,8 +110,8 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
 | `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
 | `get_delivery_options` (SK, CZ) | `product_id`, optional `quantity` (1 or 2, default 1) | Market-level shipping quote, including prices, dates, and pickup places supplied with each method |
-| `list_product_categories` (SK, CZ) | None | Supported category IDs, names, and allowed facet values |
-| `browse_products` (SK, CZ) | `category_id`, optional `facets`, `offer`, and `page` (default 1) | One catalogue page with optional deal filtering, coverage counts, and `next_page` |
+| `list_product_categories` (SK, CZ) | Optional `department`, or `category_id` and/or `query` | Live animal-department navigation or filters and counts for a selected scope |
+| `browse_products` (SK, CZ) | `category_id`, `query`, or both, plus optional catalogue filters, `offer`, and `page` (default 1) | One eligible catalogue page, coverage counts, and `next_page` |
 
 Example workflow:
 
@@ -129,37 +129,33 @@ compare_products({ product_ids: ["294-101115", "294-172197"] })
 find_common_stores({ product_ids: ["294-101115", "294-172197"], city: "Bratislava" })
 find_stores({ latitude: 48.15, longitude: 17.11 }) // SK, near central Bratislava
 get_delivery_options({ product_id: "294-101115", quantity: 2 }) // SK or CZ
-list_product_categories({}) // SK or CZ
-browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: { "vek-psa": "senior" } }) // SK
-browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: { "stari-psa": "senior" } }) // CZ
 ```
 
-`list_product_categories` returns the supported categories and their allowed facet keys and values for the server's market. Pass one value per facet key. Different keys must all match. Omit `facets` to browse the category without filters.
+### Catalogue filters
 
-| Category | Available filters in SK and CZ |
-| --- | --- |
-| Dry dog food | Puppy, adult, or senior. Can combine life stage with grain-free. |
-| Wet dog food | Puppy, adult, or senior |
-| Dry cat food | Kitten, adult, or senior |
-| Cat litter | Clumping, odor control, coarse, fine, or for white cats |
-
-For a combined filter, Slovak dry dog food accepts `facets: { "vek-psa": "senior", "alergie-psa": "bez-obilnin-grain-free" }`. Use the market's discovery result for the category ID and exact facet values.
-
-`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It skips candidates with missing product records and returns eligible product IDs, names, and links in catalogue order. `upstream_total_count` counts all catalogue matches. `candidates_checked` and `eligible_count` describe the page before optional offer filtering. Use `get_product` for full product details and availability.
-
-Set `offer: "sale"` for advertised general sales, `offer: "family"` for Family member prices, or `offer: "deals"` for both. You can combine it with any supported category facets. The MCP checks eligible products on the current page against the public product details. Each match includes the advertised price, published original price, offer variant, and price check time. Family prices require membership. Published unit prices can reflect the regular price during an offer. Compare equivalent units and keep the offer label with the price.
-
-Continue with `next_page` and the same category, facets, and offer filter, even when the page has zero deals. `offer_filter.detail_failures` counts product details the MCP could not verify. The upstream total and page order come from the catalogue, so the results cover the pages you check.
+The Slovak and Czech tools cover the storefront’s dogs, cats, small mammals, birds, aquarium, and terrarium navigation. Call `list_product_categories({})` for category IDs and departments. Pass `department` to narrow the list, or pass a category ID, a keyword query, or both to get the live `filters` for that scope.
 
 ```js
+// Example using the Slovak aquarium decoration category and length facet.
+list_product_categories({ department: "aquaristics" })
+list_product_categories({ category_id: "7e43e545-85f0-4b57-97a4-8a402743d088", query: "dekorácia" })
 browse_products({
-  category_id: "42eeee01-5544-4e68-8130-bef9755298ae",
-  facets: { "vek-psa": "dospely", "alergie-psa": "bez-obilnin-grain-free" },
-  offer: "deals",
-}) // SK
+  category_id: "7e43e545-85f0-4b57-97a4-8a402743d088",
+  query: "dekorácia",
+  facets: { dlzka: { from: 0, to: 20 } },
+  catalogue_price: { from: 0, to: 30 },
+})
 ```
 
-To show more, pass the returned `next_page` as `page` with the same category and facets. A page can have zero eligible products and still return a `next_page`. A null `next_page` means the current upstream total is exhausted. Results reflect the catalog at each request, so products can move between pages as the catalog changes. `coverage` is `first_page` on page 1 and `category_page` on later pages.
+Use the exact keys and values from the discovery result. A facet accepts one value, an array of acceptable values, or a numeric `{ from, to }` range in the catalogue’s units. Different facet keys must all match. Life-stage choices such as puppy, adult, and senior use this same syntax. Use `get_product` to confirm dimensions and attributes that the catalogue omits.
+
+Other inputs include `brands`, `subcategories`, `campaigns`, `tags`, and `ratings` from the same discovery result. The `only_in_stock` flag uses catalogue stock. Use `get_product_availability` for pickup at a specific branch. `catalogue_price` and price sorting use catalogue amounts in the market currency. Check `get_product` for the current public offer price. If the storefront labels are unavailable, discovery returns exact raw values and counts with `labels_available: false`.
+
+`browse_products` checks up to ten candidates per page for publication, local sale restrictions, and a public price-level record. It skips missing product records. `upstream_total_count` counts catalogue matches before eligibility and offer checks. Keyword browsing filters up to 200 upstream candidates and defaults to keyword order. `candidate_limit_reached` indicates that the search reported further candidates outside the verified window.
+
+Set `offer: "sale"` for general sales, `offer: "family"` for Family member prices, or `offer: "deals"` for both. Each match includes the public offer price, published original price, offer variant, and price check time. Family prices require membership. Published unit prices can reflect the regular price during an offer. `offer_filter.detail_failures` counts product details that could not be verified.
+
+Pass `next_page` as `page` with the same inputs, even when a page has no eligible products or deals. A null `next_page` means the current candidate total is exhausted. Catalogue changes between requests can move products between pages. Poland has keyword search via `search_products`. [Catalogue investigation](docs/catalogue-filter-investigation.md)
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 

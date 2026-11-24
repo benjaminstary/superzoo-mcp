@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { browseProductsInputs, categoryIdSchema, categoryOffer, categoryPageNumber } from './categories.js';
+import { catalogueFacets, catalogueFilters, categoryIdSchema, categoryOffer, categoryPageNumber } from './categories.js';
 import { productInput, availabilityInput, findStoresInput, deliveryQuantitySchema } from './client.js';
 
 export type RequestContext = { signal?: AbortSignal };
@@ -16,23 +16,26 @@ const count = z.number().int().nonnegative();
 const provenance = { source: z.string(), market, checked_at: timestamp };
 
 const categoryMarket = z.enum(['CZ', 'SK']);
-const czechCategoryFacets = browseProductsInputs.CZ.shape.facets.unwrap();
-const slovakCategoryFacets = browseProductsInputs.SK.shape.facets.unwrap();
 export const listProductCategoriesResultSchema = z.object({
   market: categoryMarket,
   categories: z.array(z.object({
     category_id: categoryIdSchema,
     name: nonBlankText,
-    facets: z.array(z.object({
-      key: nonBlankText,
-      values: z.array(nonBlankText),
-    })),
+    department: nonBlankText,
+    department_name: nonBlankText,
   })),
+  query: nonBlankText.optional(),
+  candidate_limit_reached: z.boolean().optional(),
+  source: z.string().optional(),
+  checked_at: timestamp.optional(),
+  upstream_total_count: count.optional(),
+  labels_available: z.boolean().optional(),
+  filters: catalogueFilters.optional(),
 });
 export type ListProductCategoriesResult = z.output<typeof listProductCategoriesResultSchema>;
 
 export const toolErrorSchema = z.object({
-  code: z.enum(['not_found', 'rate_limited', 'upstream_unavailable', 'invalid_response',
+  code: z.enum(['invalid_input', 'not_found', 'rate_limited', 'upstream_unavailable', 'invalid_response',
     'timeout', 'cancelled', 'overloaded', 'internal_error']),
   message: z.string(),
   retryable: z.boolean(),
@@ -60,12 +63,14 @@ const price = z.object({
 export const browseProductsResultSchema = z.object({
   ...provenance,
   market: categoryMarket,
-  category_id: categoryIdSchema,
-  facets_applied: z.union([czechCategoryFacets, slovakCategoryFacets]),
-  coverage: z.enum(['first_page', 'category_page']),
+  category_id: categoryIdSchema.nullable(),
+  facets_applied: catalogueFacets,
+  query: nonBlankText.optional(),
+  candidate_limit_reached: z.boolean().optional(),
+  coverage: z.enum(['first_page', 'category_page', 'bounded_candidates']),
   page: categoryPageNumber.describe('Page returned, starting at 1.'),
   next_page: categoryPageNumber.nullable()
-    .describe('Next candidate page with the same category, facets, and offer filter, or null when the upstream total is exhausted.'),
+    .describe('Next candidate page with the same inputs, or null when the upstream total is exhausted.'),
   upstream_total_count: count.describe('Catalogue matches before eligibility and offer checks.'),
   candidates_checked: count,
   eligible_count: count.describe('Products on this page passing catalogue eligibility before offer checks.'),

@@ -1,3 +1,4 @@
+import { catalogueFetch } from './helpers/catalogue-fetch.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -747,7 +748,7 @@ test('category browse uses the filter scope ID, joins in filter order, and exclu
   records[7].prices[0].priceLevelId = '22';
   records[8].product.disallowedPriceLevels = ['22'];
   const calls = [];
-  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async (url, options) => {
     assert.equal(options.method, 'POST');
     assert.equal(options.credentials, 'omit');
     assert.equal(options.redirect, 'error');
@@ -756,14 +757,14 @@ test('category browse uses the filter scope ID, joins in filter order, and exclu
     return String(url) === categoryFilterUrl
       ? response({ products: ids.map(id => ({ id })), totalCount: 222 })
       : response({ items: records.reverse() });
-  } });
+  }) });
   const facets = { 'stari-psa': 'senior' };
   const result = await client.browseProducts({ category_id: dogFoodId, facets });
   assert.deepEqual(calls, [
     [categoryFilterUrl, {
       priceLevel: '1', scope: { category: 'c1955f56-7438-4c93-8875-9dc8f634acd9' },
       filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
-      facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
+      facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices', 'tags'],
       query: { parameters: [{ alias: 'stari-psa', values: ['senior'] }] },
       paging: { page: 1, limit: 10 },
     }],
@@ -788,10 +789,10 @@ test('category browse uses the filter scope ID, joins in filter order, and exclu
 
 test('empty category page skips the product join and sends the unfiltered query', async () => {
   const calls = [];
-  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async (url, options) => {
     calls.push([String(url), JSON.parse(options.body).query]);
     return response({ products: [], totalCount: 0 });
-  } });
+  }) });
   const result = await client.browseProducts({ category_id: dogFoodId });
   assert.deepEqual(calls, [[categoryFilterUrl, {}]]);
   assert.deepEqual(result.facets_applied, {});
@@ -805,7 +806,7 @@ test('empty category page skips the product join and sends the unfiltered query'
 
 test('category browsing advances on the upstream count even when no products are eligible', async () => {
   const calls = [];
-  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push(body);
     if (String(url) === categoryFilterUrl) {
@@ -814,7 +815,7 @@ test('category browsing advances on the upstream count even when no products are
     const record = categoryRecord(body.ids[0]);
     record.product.productSaleForbidden = true;
     return response({ items: [record] });
-  } });
+  }) });
   const facets = { 'stari-psa': 'senior' };
   for (const [page, next_page, candidates_checked] of [[2, 3, 1], [3, null, 1], [4, null, 0]]) {
     const result = await client.browseProducts({ category_id: dogFoodId, facets, page });
@@ -831,15 +832,15 @@ test('category browsing advances on the upstream count even when no products are
   assert.deepEqual(calls.filter(call => call.ids), [{ ids: ['294-2'] }, { ids: ['294-3'] }]);
 });
 
-test('category browse rejects invalid inputs and unsupported markets before fetching', async () => {
+test('category browse rejects malformed inputs and unsupported markets before fetching', async () => {
   const calls = [];
   const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => { calls.push(url); } });
   for (const args of [
-    {}, { category_id: 'arbitrary-category' },
+    {}, { category_id: 'invalid category id' },
     ...[0, -1, 1.5, '2', Number.MAX_SAFE_INTEGER + 1].map(page => ({ category_id: dogFoodId, page })),
-    { category_id: dogFoodId, facets: { 'stari-psa': 'unknown' } },
-    { category_id: dogFoodId, facets: { 'stari-psa': ['senior'] } },
-    { category_id: dogFoodId, facets: { unsupported: 'senior' } },
+    { category_id: dogFoodId, facets: { 'stari-psa': { from: 5, to: 1 } } },
+    { category_id: dogFoodId, facets: { 'stari-psa': [] } },
+    { category_id: dogFoodId, facets: { unsupported: true } },
   ]) {
     await assert.rejects(() => client.browseProducts(args), { name: 'ZodError' });
   }
@@ -853,9 +854,9 @@ test('category browse rejects invalid inputs and unsupported markets before fetc
 test('category browse skips missing product records and preserves continuation', async () => {
   const ids = ['missing', '294-170845'];
   for (const items of [[], [categoryRecord(ids[1])]]) {
-    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => response(
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async url => response(
       String(url) === categoryFilterUrl ? { products: ids.map(id => ({ id })), totalCount: 30 } : { items },
-    ) });
+    )) });
     const result = await client.browseProducts({ category_id: dogFoodId, page: 2 });
     assert.equal(result.next_page, 3);
     assert.equal(result.candidates_checked, 2);
@@ -872,9 +873,9 @@ test('category browse rejects unexpected, duplicate, or malformed product record
   malformedRestriction.product.disallowedPriceLevels = [1];
   for (const items of [[categoryRecord('wrong-id')], [categoryRecord(id), categoryRecord(id)],
     [missingRestriction], [malformedRestriction]]) {
-    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => response(
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async url => response(
       String(url) === categoryFilterUrl ? { products: [{ id }, { id: 'another-id' }], totalCount: 2 } : { items },
-    ) });
+    )) });
     await assert.rejects(() => client.browseProducts({ category_id: dogFoodId }), { code: 'invalid_response' });
   }
 });
@@ -887,10 +888,10 @@ test('category browse rejects malformed or out-of-bounds filter pages before joi
     { products: [{ id: 170845 }], totalCount: 1 },
   ]) {
     const calls = [];
-    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => {
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: catalogueFetch('CZ', async url => {
       calls.push(String(url));
       return response(page);
-    } });
+    }) });
     await assert.rejects(() => client.browseProducts({ category_id: dogFoodId }), { code: 'invalid_response' });
     assert.deepEqual(calls, [categoryFilterUrl]);
   }

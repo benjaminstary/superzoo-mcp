@@ -463,3 +463,7 @@ The README examples and Unreleased changelog match the tested contracts. SK and 
 | `npm pack --dry-run` | 13 files, including the compiled runtime and entry point, `package.json`, `README.md`, and `LICENSE`. |
 
 Live evidence came from the earlier [one-unit quotes](#anonymous-product-shipping-quotes-and-pickup--2026-11-23), [two-unit quotes](#two-unit-delivery-quotes--2026-11-23), and first-page category probes in [SK](#slovak-dry-dog-food-category-filter--2026-11-23) and [CZ](#verified-czech-dog-food-category-filter--2026-11-23). This release check used fixtures for upstream calls. Manufacturer feeding tables remain blocked on attribution, exact barcode lookup remains deferred after HTTP 403, and broader browsing remains blocked on live category evidence.
+
+## Catalogue-wide filter discovery — 2026-11-24
+
+See the [filter investigation](catalogue-filter-investigation.md) and [inventory](catalogue-filter-inventory.jsonl) for APK request fields, live parameter values, category coverage across all six animal departments, and the Polish verification gap.

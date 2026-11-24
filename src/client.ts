@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import { browseProductsInputs, categories, categoryIds, categoryMarkets } from './categories.js';
-import type { BrowseProductsInput } from './categories.js';
+import { browseProductsInput, catalogueId, catalogueKeyword, describeFilters, facetLabelsSchema,
+  listProductCategoriesInput, navigationCategorySchema, navigationSchema, rawFacetsSchema, routeSchema,
+  sortRequests, validateCatalogueSelection } from './categories.js';
+import type { BrowseProductsInput, RawFacets } from './categories.js';
 import { getMarket } from './config.js';
 import type { Market } from './config.js';
 import type { RequestContext, ProductResult, AvailabilityResult, FindStoresResult, SearchResult, DeliveryOptionsResult,
@@ -12,7 +14,22 @@ const SEARCH = 'https://full-text-search.superzoo.cz/search/api';
 const DELIVERY_QUOTE = 'https://logistics.superzoo.cz/api/actions/calculate-product-shipping-options';
 const CANDIDATE_LIMIT = 200;
 const CATEGORY_PAGE_SIZE = 10;
-const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/);
+const idSchema = catalogueId;
+const marketWebId = (market: Market) => `superzoo_${market.country.toLowerCase()}`;
+const FACET_GROUPS = ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices', 'tags'];
+const publicJson = (body: unknown, replacer?: (key: string, value: unknown) => unknown): RequestInit => ({
+  method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body, replacer),
+});
+const { rawJSON } = JSON as typeof JSON & { rawJSON(text: string): object };
+
+function catalogueRangeNumbers(key: string, value: unknown) {
+  // The filter endpoint requires JSON floats for range bounds, even at integer values.
+  if ((key !== 'from' && key !== 'to') || typeof value !== 'number' || !Number.isInteger(value)) return value;
+  const literal = String(value);
+  return rawJSON(literal.includes('e') ? literal : `${literal}.0`);
+}
+type CatalogueMarket = Exclude<Market, { country: 'PL' }>;
+type CatalogueScope = { category: string; productIds?: string[] } | { category?: string; productIds: string[] };
 const decimalText = z.string().regex(/^\d+(?:\.\d+)?$/);
 
 function compareDecimals(left: string, right: string): number {
@@ -35,7 +52,7 @@ export const deliveryOptionsInput = z.strictObject({
   quantity: deliveryQuantitySchema.default(1),
 });
 export const searchInput = z.object({
-  query: z.string().trim().min(1).max(200),
+  query: catalogueKeyword,
   limit: z.number().int().min(1).max(50).default(10),
   brand: z.string().trim().min(1).max(100).optional()
     .describe('Exact brand name, ignoring case and accents.'),
@@ -54,7 +71,6 @@ export const findStoresInput = z.strictObject({
   latitude: z.number().min(-90).max(90).describe('Latitude in decimal degrees.'),
   longitude: z.number().min(-180).max(180).describe('Longitude in decimal degrees.'),
 });
-export const listProductCategoriesInput = z.strictObject({});
 const nullableText = z.string().nullable().optional();
 const decimal = decimalText.nullable().optional();
 const nonBlankText = z.string().regex(/\S/);
@@ -63,6 +79,8 @@ const categoryPageSchema = z.object({
   totalCount: z.number().int().nonnegative(),
 }).refine(({ products, totalCount }) =>
   products.length <= totalCount && new Set(products.map(product => product.id)).size === products.length);
+const facetResponseSchema = z.object({ totalCount: z.number().int().nonnegative(), facets: rawFacetsSchema });
+
 const categoryProductsSchema = z.object({
   items: z.array(z.object({
     product: z.object({
@@ -251,30 +269,8 @@ export class SuperzooClient {
       // Only this delivery code is verified; branch stock and canBuy are separate facts.
       return online_only !== true || product.availability?.deliveryAvailability?.availability === 'available';
     };
-    const url = new URL(`${SEARCH}/mutations/superzoo_${this.market.country.toLowerCase()}/languages/${this.market.language}/search`);
-    url.search = new URLSearchParams({
-      term: query, 'types[0]': 'productCatalogue.product', limit: String(CANDIDATE_LIMIT),
-      'f_must_not[0]': 'productSaleForbidden:true',
-      ...(this.market.priceLevel ? { 'f_must_not[1]': `disallowedPriceLevels:${this.market.priceLevel}` } : {}),
-    }).toString();
-    const { data, checked_at } = await this.policy.request({
-      market: this.market.country, operation: 'search', url, schema: searchSchema, ...requestContext,
-    });
-    const items = data.items.slice(0, CANDIDATE_LIMIT);
-    const seen = new Set();
-    const candidates = items.filter((item): item is SearchCandidate => {
-      if (item.type !== 'productCatalogue.product' || !idSchema.safeParse(item.id).success || !item.alias) return false;
-      const attrs = Array.isArray(item.attributes) ? {} : item.attributes ?? {};
-      // Unexpected restriction encodings fail closed rather than exposing a forbidden product.
-      const forbidden = attrs.productSaleForbidden;
-      if (forbidden !== undefined && forbidden !== false &&
-          !(Array.isArray(forbidden) && forbidden.length > 0 && forbidden.every(value => value === 'false' || value === false))) return false;
-      const levels = attrs.disallowedPriceLevels;
-      if (levels != null && (!Array.isArray(levels) || (this.market.priceLevel ? levels.some(level => String(level) === this.market.priceLevel) : levels.length > 0))) return false;
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
+    const { candidates, source, checked_at, upstreamTotal, itemsChecked, limitReached } =
+      await this.searchCandidates(query, requestContext);
     const products: SearchProduct[] = [];
     let productsChecked = 0;
     let detailFailures = 0;
@@ -301,10 +297,10 @@ export class SuperzooClient {
     }
     if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
     return {
-      ...context(this.market, url.toString(), checked_at), query, products,
-      upstream_total_count: data.totalCount, total_count_is_product_count: false,
-      candidates_checked: items.length,
-      candidate_limit_reached: data.totalCount > items.length || data.items.length > items.length,
+      ...context(this.market, source, checked_at), query, products,
+      upstream_total_count: upstreamTotal, total_count_is_product_count: false,
+      candidates_checked: itemsChecked,
+      candidate_limit_reached: limitReached,
       requested_limit_filled: products.length === limit,
       filters_applied: filters,
       products_checked: productsChecked,
@@ -313,58 +309,217 @@ export class SuperzooClient {
     };
   }
 
-  async listProductCategories(input: z.input<typeof listProductCategoriesInput>): Promise<ListProductCategoriesResult> {
-    listProductCategoriesInput.parse(input);
+  private async searchCandidates(query: string, requestContext: RequestContext) {
+    const url = new URL(`${SEARCH}/mutations/${marketWebId(this.market)}/languages/${this.market.language}/search`);
+    url.search = new URLSearchParams({
+      term: query, 'types[0]': 'productCatalogue.product', limit: String(CANDIDATE_LIMIT),
+      'f_must_not[0]': 'productSaleForbidden:true',
+      ...(this.market.priceLevel ? { 'f_must_not[1]': `disallowedPriceLevels:${this.market.priceLevel}` } : {}),
+    }).toString();
+    const { data, checked_at } = await this.policy.request({
+      market: this.market.country, operation: 'search', url, schema: searchSchema, ...requestContext,
+    });
+    const items = data.items.slice(0, CANDIDATE_LIMIT);
+    const seen = new Set();
+    const candidates = items.filter((item): item is SearchCandidate => {
+      if (item.type !== 'productCatalogue.product' || !idSchema.safeParse(item.id).success || !item.alias) return false;
+      const attrs = Array.isArray(item.attributes) ? {} : item.attributes ?? {};
+      // Unexpected restriction encodings fail closed rather than exposing a forbidden product.
+      const forbidden = attrs.productSaleForbidden;
+      if (forbidden !== undefined && forbidden !== false &&
+          !(Array.isArray(forbidden) && forbidden.length > 0 && forbidden.every(value => value === 'false' || value === false))) return false;
+      const levels = attrs.disallowedPriceLevels;
+      if (levels != null && (!Array.isArray(levels) || (this.market.priceLevel ? levels.some(level => String(level) === this.market.priceLevel) : levels.length > 0))) return false;
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+    return {
+      candidates, source: url.toString(), checked_at, upstreamTotal: data.totalCount, itemsChecked: items.length,
+      limitReached: data.totalCount > items.length || data.items.length > items.length,
+    };
+  }
+
+  private catalogueMarket(): CatalogueMarket {
     if (this.market.country === 'PL') {
       throw new SuperzooError('not_found', `Category browsing is not supported in ${this.market.name}`);
     }
-    const market = this.market.country;
+    return this.market;
+  }
+
+  private async catalogueNavigation(market: CatalogueMarket, requestContext: RequestContext) {
+    const { data } = await this.policy.request({
+      market: market.country, operation: 'category_navigation',
+      url: `${market.web}/web-api/navigation/animal-category`,
+      schema: navigationSchema, init: { credentials: 'omit' }, ...requestContext,
+    });
+    return data.items.flatMap(group => group.children.flatMap(child => {
+      if (child.nodeType !== 'productCategory') return [];
+      const entry = navigationCategorySchema.safeParse(child);
+      if (!entry.success) throw new SuperzooError('invalid_response', 'Superzoo returned an invalid category entry');
+      const { id, name, alias } = entry.data;
+      return [{ alias, descriptor: { category_id: id, name: name.trim() || alias,
+        department: group.categoryType, department_name: group.text } }];
+    }));
+  }
+
+  private async resolveCatalogueCategory(market: CatalogueMarket, categoryId: string, requestContext: RequestContext) {
+    const categories = await this.catalogueNavigation(market, requestContext);
+    const category = categories.find(entry => entry.descriptor.category_id === categoryId);
+    if (!category) throw new SuperzooError('not_found', 'Category ID is unavailable in this market');
+
+    const { data } = await this.policy.request({
+      market: market.country, operation: 'category_route',
+      url: this.catalogueModelUrl(market, 'route'), schema: routeSchema,
+      init: publicJson({ ids: [category.alias] }), ...requestContext,
+    });
+    const routes = data.items.filter(({ route }) => route.alias === category.alias);
+    if (routes.length !== 1 || routes[0]!.route.settings.templateId !== 'productCatalogue:category:CATEGORY') {
+      throw new SuperzooError('not_found', 'No catalogue route is available for this category');
+    }
+    return { descriptor: category.descriptor, scopeId: routes[0]!.route.settings.resourceId };
+  }
+
+  private catalogueModelUrl(market: CatalogueMarket, collection: 'route' | 'product') {
+    return `https://read-model.superzoo.cz/collections/${collection}/webs/${marketWebId(market)}/languages/${market.language}/documents/filter`;
+  }
+
+  private async catalogueScope(market: CatalogueMarket, input: { category_id?: string | undefined; query?: string | undefined },
+    requestContext: RequestContext) {
+    const [category, search] = await Promise.all([
+      input.category_id === undefined ? undefined : this.resolveCatalogueCategory(market, input.category_id, requestContext),
+      input.query === undefined ? undefined : this.searchCandidates(input.query, requestContext),
+    ]);
+    const scope: CatalogueScope = search
+      ? { ...(category && { category: category.scopeId }), productIds: search.candidates.map(candidate => candidate.id) }
+      : { category: category!.scopeId };
+    return { scope, category, search };
+  }
+
+  private filterSource(market: CatalogueMarket) {
+    return `https://parameter-filter.superzoo.cz/filter-products/${marketWebId(market)}`;
+  }
+
+  private async catalogueRequest<T extends { totalCount: number }>(market: CatalogueMarket, schema: z.ZodType<T>, scope: CatalogueScope,
+    args: { page: number; limit: number; query?: object; inStock?: boolean | undefined; sort?: { sortBy: string; order: string } | undefined },
+    requestContext: RequestContext) {
+    const result = await this.policy.request({
+      market: market.country, operation: 'category_filter', url: this.filterSource(market), schema,
+      init: publicJson({
+        priceLevel: market.priceLevel, scope,
+        filters: { onlyOnSale: true, onlyInStock: args.inStock ?? false, promotedOnly: false },
+        facets: FACET_GROUPS, query: args.query ?? {}, paging: { page: args.page, limit: args.limit },
+        ...(args.sort && { sort: args.sort }),
+      }, catalogueRangeNumbers), ...requestContext,
+    });
+    if (scope.productIds && result.data.totalCount > scope.productIds.length) {
+      throw new SuperzooError('invalid_response', 'Superzoo returned a total outside the keyword candidate set');
+    }
+    return result;
+  }
+
+  private async catalogueFacets(market: CatalogueMarket, scope: CatalogueScope, requestContext: RequestContext) {
+    const { data, checked_at } = await this.catalogueRequest(
+      market, facetResponseSchema, scope, { page: 1, limit: 1 }, requestContext);
+    return { raw: data.facets, total: data.totalCount, checked_at };
+  }
+
+  private catalogueFacetLabels(market: CatalogueMarket, raw: RawFacets, categoryId: string | undefined,
+    requestContext: RequestContext) {
+    return this.policy.request({
+      market: market.country, operation: 'category_facet_labels', url: `${market.web}/web-api/products/parameter-filter`,
+      schema: facetLabelsSchema, init: publicJson({ facets: raw,
+        ...(categoryId && { scope: { type: 'category', categoryId } }) }),
+      ...requestContext,
+    });
+  }
+
+  async listProductCategories(input: z.input<typeof listProductCategoriesInput>,
+    requestContext: RequestContext = {}): Promise<ListProductCategoriesResult> {
+    const args = listProductCategoriesInput.parse(input);
+    const market = this.catalogueMarket();
+    if (args.category_id === undefined && args.query === undefined) {
+      const entries = await this.catalogueNavigation(market, requestContext);
+      return {
+        market: market.country,
+        categories: entries.map(({ descriptor }) => descriptor)
+          .filter(entry => !args.department || entry.department === args.department),
+      };
+    }
+
+    const { scope, category, search } = await this.catalogueScope(market, args, requestContext);
+    const { raw, total, checked_at } = scope.productIds?.length === 0
+      ? { raw: {}, total: 0, checked_at: search!.checked_at }
+      : await this.catalogueFacets(market, scope, requestContext);
+    const labels = total === 0 ? null : await this.catalogueFacetLabels(market, raw, scope.category, requestContext)
+      .then(result => result.data, (error: unknown) => {
+        if (!(error instanceof SuperzooError) || error.code === 'cancelled' || error.code === 'internal_error') throw error;
+        return null;
+      });
     return {
-      market,
-      categories: categoryIds.map(category_id => {
-        const { name, facets } = categories[category_id][market];
-        return { category_id, name, facets: Object.entries(facets).map(([key, values]) => ({ key, values: [...values] })) };
-      }),
+      market: market.country,
+      categories: category ? [category.descriptor] : [],
+      ...(args.query !== undefined && { query: args.query, candidate_limit_reached: search!.limitReached }),
+      source: scope.productIds?.length === 0 ? search!.source : this.filterSource(market), checked_at,
+      upstream_total_count: total, labels_available: labels !== null, filters: describeFilters(raw, labels ?? {}, market.currency),
     };
   }
 
   async browseProducts(input: BrowseProductsInput, requestContext: RequestContext = {}): Promise<BrowseProductsResult> {
-    const market = this.market;
-    if (market.country === 'PL') {
-      throw new SuperzooError('not_found', `Category browsing is not supported in ${market.name}`);
+    const market = this.catalogueMarket();
+    const args = browseProductsInput.parse(input);
+    const { category_id, query: keyword, page, facets, offer, catalogue_price, brands, subcategories, campaigns, tags,
+      ratings, only_in_stock, sort } = args;
+    const { scope, search } = await this.catalogueScope(market, args, requestContext);
+    const noCandidates = scope.productIds?.length === 0;
+    const parameters = Object.entries(facets ?? {}).map(([alias, value]) =>
+      ({ alias, values: Array.isArray(value) ? value : [value] }));
+    const needsTypes = sort === 'unit_price_asc' ||
+      parameters.some(parameter => parameter.values.some(value => typeof value === 'object'));
+    if (!noCandidates && (parameters.length || brands || subcategories || campaigns || tags || needsTypes)) {
+      const { raw, total } = await this.catalogueFacets(market, scope, requestContext);
+      if (total > 0) {
+        const labels = needsTypes ? (await this.catalogueFacetLabels(market, raw, scope.category, requestContext)).data : undefined;
+        validateCatalogueSelection(args, raw, labels);
+      }
     }
-    const { category_id, facets = {}, page, offer } = browseProductsInputs[market.country].parse(input);
-    const webId = categoryMarkets[market.country];
-    const priceLevel = market.priceLevel;
-    const source = `https://parameter-filter.superzoo.cz/filter-products/${webId}`;
-    const facetEntries = Object.entries(facets).filter((entry): entry is [string, string] => entry[1] !== undefined);
-    const parameters = facetEntries.map(([alias, value]) => ({ alias, values: [value] }));
-    const query = parameters.length ? { parameters } : {};
-    const post = { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' } } as const;
-    const { data: filtered, checked_at } = await this.policy.request({
-      market: market.country, operation: 'category_filter', url: source, schema: categoryPageSchema,
-      init: { ...post, body: JSON.stringify({
-        priceLevel, scope: { category: categories[category_id].scopeId },
-        filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
-        facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
-        query, paging: { page, limit: CATEGORY_PAGE_SIZE },
-      }) },
-      ...requestContext,
-    });
+    const query = {
+      ...(parameters.length && { parameters }),
+      ...(catalogue_price && { price: [catalogue_price] }),
+      ...(brands && { brands }),
+      ...(subcategories && { categories: subcategories }),
+      ...(campaigns && { campaigns }),
+      ...(tags && { tags }),
+      ...(ratings && { reviews: ratings }),
+    };
+    const { data: filtered, checked_at } = noCandidates
+      ? { data: { products: [], totalCount: 0 }, checked_at: search!.checked_at }
+      : await this.catalogueRequest(market, categoryPageSchema, scope, {
+        page, limit: CATEGORY_PAGE_SIZE, query, inStock: only_in_stock,
+        sort: sort ? sortRequests[sort] : search ? { sortBy: 'idsList', order: 'asc' } : undefined,
+      }, requestContext);
     const ids = filtered.products.map(product => product.id);
+    const { productIds } = scope;
+    if (productIds && ids.some(id => !productIds.includes(id))) {
+      throw new SuperzooError('invalid_response', 'Superzoo returned products outside the keyword candidate set');
+    }
     const result = {
-      market: market.country, source, checked_at, category_id,
-      facets_applied: Object.fromEntries(facetEntries), coverage: page === 1 ? 'first_page' : 'category_page',
+      market: market.country, source: noCandidates ? search!.source : this.filterSource(market), checked_at,
+      category_id: category_id ?? null, facets_applied: facets ?? {},
+      ...(keyword === undefined ? {} : { query: keyword, candidate_limit_reached: search!.limitReached }),
+      coverage: search ? 'bounded_candidates' : page === 1 ? 'first_page' : 'category_page',
       page, next_page: page < Math.ceil(filtered.totalCount / CATEGORY_PAGE_SIZE) ? page + 1 : null,
       upstream_total_count: filtered.totalCount, candidates_checked: ids.length,
       ...(offer === undefined ? {} : { offer_filter: { mode: offer, details_checked: 0, detail_failures: 0 } }),
     } satisfies Omit<BrowseProductsResult, 'product_source' | 'eligible_count' | 'products'>;
     if (ids.length === 0) return { ...result, product_source: null, eligible_count: 0, products: [] };
 
-    const product_source = `https://read-model.superzoo.cz/collections/product/webs/${webId}/languages/${market.language}/documents/filter`;
+    const webId = marketWebId(market);
+    const priceLevel = market.priceLevel;
+    const product_source = this.catalogueModelUrl(market, 'product');
     const { data: records } = await this.policy.request({
       market: market.country, operation: 'category_products', url: product_source, schema: categoryProductsSchema,
-      init: { ...post, body: JSON.stringify({ ids }) }, ...requestContext,
+      init: publicJson({ ids }), ...requestContext,
     });
     const byId = new Map(records.items.map(item => [item.product.productId, item]));
     if (byId.size !== records.items.length || [...byId.keys()].some(id => !ids.includes(id))) {

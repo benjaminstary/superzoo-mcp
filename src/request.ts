@@ -2,7 +2,8 @@ import type { z } from 'zod';
 import type { Country } from './config.js';
 import { SuperzooError } from './errors.js';
 
-type Operation = 'search' | 'product' | 'availability' | 'store_locator' | 'delivery_quote' | 'category_filter' | 'category_products';
+type Operation = 'search' | 'product' | 'availability' | 'store_locator' | 'delivery_quote' | 'category_filter' | 'category_products'
+  | 'category_navigation' | 'category_route' | 'category_facet_labels';
 interface RequestOptions<T> {
   market: Country;
   operation: Operation;
