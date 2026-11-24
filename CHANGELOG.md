@@ -5,6 +5,8 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-24
+
 ### Added
 
 - `list_product_categories` and `browse_products` cover dry and wet dog food,
@@ -13,6 +15,8 @@ Unreleased are merged but have not been included in a published release.
   supports litter type. Browsing combines facets on the selected category,
   returns the next page when available, and reports upstream matches separately
   from eligible products on the page.
+- Stable GitHub releases publish Docker images to GitHub Container Registry
+  for `linux/amd64` and `linux/arm64`.
 
 ### Changed
 
@@ -91,7 +95,8 @@ Unreleased are merged but have not been included in a published release.
 - Docker support, offline tests, live smoke checks, and npm publishing through
   stable GitHub releases.
 
-[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.3.0...master
+[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.4.0...master
+[0.4.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.1.0
