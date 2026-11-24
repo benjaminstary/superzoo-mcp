@@ -292,6 +292,43 @@ The APK-shaped request above returned HTTP 200 at `https://parameter-filter.supe
 
 The Slovak product read model batch returned HTTP 200 and joined all 20 distinct IDs from the two pages. All were published, explicitly allowed for sale, and had a price for the same product, Slovak web ID, and level `"22"`. None blocked level `"22"`. All 10 filtered products carried `vek-psa=senior`. This verifies the Slovak category and first-page filter contract. The MCP exposes this category and facet in Slovakia. Raw captures remain local.
 
+### Live dog life-stage filter verification — 2026-11-24
+
+A plain JavaScript MCP client discovered the category and called `browse_products` for each stage in SK and CZ. The requests used the existing anonymous category filter and product read model. Each upstream request had a 12-second deadline with no redirects or retries during the check. Every call returned ten eligible first-page products. The joined records for all returned products contained the requested facet value. Each MCP result echoed the applied facet, and its JSON text matched `structuredContent`.
+
+| Market | Puppy | Adult | Senior |
+| --- | --- | --- | --- |
+| SK, `vek-psa` | `stena` (222) | `dospely` (545) | `senior` (238) |
+| CZ, `stari-psa` | `stene` (211) | `dospely` (531) | `senior` (222) |
+
+Counts are upstream totals before the MCP eligibility checks. This check supplied tool arguments directly.
+
+### Natural-language dog life-stage selection
+
+Three independent Codex agents each received a shopper prompt and access to the selected market through MCP discovery and tool calls. The MCP server ran with simulated catalog responses. Each agent discovered the category, then successfully called `browse_products` with the correct market-specific facet on its first browse attempt. All three produced a shortlist without asking the shopper for a category ID or filter value.
+
+| Market | Prompt | Applied facet |
+| --- | --- | --- |
+| SK | “Máme doma šteniatko. Vieš mi nájsť granuly preň?” | `vek-psa=stena` |
+| CZ | “Hledám granule pro dospělého psa.” | `stari-psa=dospely` |
+| CZ | “What dry dog food do you have for a senior dog?” | `stari-psa=senior` |
+
+The three prompts checked tool selection. Live matching for all six market and stage combinations was verified separately above.
+
+### Live shopping flow — 2026-11-24
+
+A plain JavaScript MCP SDK client connected over stdio to the built server in SK at 10:54 Bratislava time. It discovered the dry dog food category and puppy facet via `list_product_categories`, then used `browse_products`, `compare_products`, and `get_delivery_options` in sequence. The filtered first page returned 10 eligible products from 222 upstream matches.
+
+The client compared the first three variants. All three returned standard EUR offers with a published price per 100 g. The client converted those rounded unit prices to approximate EUR/kg.
+
+| Product ID | Pack price | Published price per 100 g | Approximate price per kg |
+| --- | ---: | ---: | ---: |
+| `214-13177` | €85.79 | €0.43 | €4.30 |
+| `214-13182` | €92.90 | €0.46 | €4.60 |
+| `214-13180` | €99.00 | €0.50 | €5.00 |
+
+The quote for two units of the lowest-priced sample, `214-13177`, returned DPD delivery at €3.99 including VAT and six store pickup places marked available. The DPD quote reported `2026-11-27T10:00:00+01:00`. The quote was market-level. The sample covered three first-page products and one life-stage and market combination.
+
 ### Broader category browsing — 2026-11-23
 
 Saved SK and CZ navigation responses list wet dog food, dry cat food, and cat litter. Saved dry dog food filter responses advertise `vek-psa=senior` and `alergie-psa=bez-obilnin-grain-free` in SK and `stari-psa=senior` and `alergie=bez-obilovin-grain-free-1` in CZ. These values are candidates for a combined filter on dry dog food.
@@ -299,6 +336,19 @@ Saved SK and CZ navigation responses list wet dog food, dry cat food, and cat li
 An anonymous POST to `https://read-model.superzoo.cz/collections/route/webs/superzoo_sk/languages/sk/documents/filter` requested the three additional SK category aliases in one `ids` batch. It returned HTTP 403 with a 12-second timeout configured and redirects disabled. The run stopped at that response. Additional scope resolution, combined-filter matches, page order and overlap, final-page behavior, and product eligibility on those pages remain unverified.
 
 A follow-up used the app's single-alias lookup for `macky/podstielky` (cat litter). It returned HTTP 200. The exact route had category template `productCatalogue:category:CATEGORY` and scope `19291e00-26e0-464b-bd6a-b804296ffb14`, distinct from navigation ID `dfc861d8-9069-47db-b29b-5d6afee06f1f`. The first unfiltered page request to `https://parameter-filter.superzoo.cz/filter-products/superzoo_sk` used that scope, price level `22`, and a limit of ten. It returned HTTP 403. Both requests were anonymous, with a 12-second timeout, no redirects, and no retries. The run stopped at the filter response. Cat litter facets and products remain unverified.
+
+### Dry dog food pagination — 2026-11-24
+
+At 10:56 Bratislava time, four sequential anonymous requests per market used the existing dry dog food filter scope, the local puppy facet, and the default upstream order. Each changed only `paging.page` and kept `paging.limit` at 10. Requests used a 12-second deadline, blocked redirects, and omitted credentials. All returned HTTP 200.
+
+| Market | Upstream total on every page | Pages 1 and 2 | Last page | Next request |
+| --- | ---: | --- | --- | --- |
+| SK | 222 | 10 unique IDs each, zero overlap | Page 23, 2 candidates | Page 24, 0 candidates |
+| CZ | 211 | 10 unique IDs each, zero overlap | Page 22, 1 candidate | Page 23, 0 candidates |
+
+The upstream response provides `totalCount` and ordered candidates. It provides no continuation field. The observed boundary is `ceil(totalCount / 10)`. The total counts candidates before MCP eligibility checks. Results reflect the current catalog at each request.
+
+A live plain JavaScript MCP client repeated the four page requests over stdio in each market. The first two pages each returned ten eligible products with no overlap. The final pages returned two eligible products in SK and one in CZ, with `next_page: null`. The requests past the final pages returned zero candidates, skipped the product join, and also returned `next_page: null`.
 
 ## Anonymous product shipping quotes and pickup — 2026-11-23
 

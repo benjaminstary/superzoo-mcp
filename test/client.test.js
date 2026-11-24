@@ -775,6 +775,8 @@ test('category browse uses the filter scope ID, joins in filter order, and exclu
   assert.equal(result.product_source, categoryProductUrl);
   assert.ok(Date.parse(result.checked_at));
   assert.equal(result.coverage, 'first_page');
+  assert.equal(result.page, 1);
+  assert.equal(result.next_page, 2);
   assert.deepEqual(result.facets_applied, facets);
   assert.equal(result.upstream_total_count, 222);
   assert.equal(result.candidates_checked, ids.length);
@@ -795,16 +797,46 @@ test('empty category page skips the product join and sends the unfiltered query'
   assert.deepEqual(result.facets_applied, {});
   assert.equal(result.upstream_total_count, 0);
   assert.equal(result.candidates_checked, 0);
+  assert.equal(result.next_page, null);
   assert.equal(result.eligible_count, 0);
   assert.equal(result.product_source, null);
   assert.deepEqual(result.products, []);
+});
+
+test('category browsing advances on the upstream count even when no products are eligible', async () => {
+  const calls = [];
+  const client = new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    if (String(url) === categoryFilterUrl) {
+      return response({ totalCount: 21, products: body.paging.page <= 3 ? [{ id: `294-${body.paging.page}` }] : [] });
+    }
+    const record = categoryRecord(body.ids[0]);
+    record.product.productSaleForbidden = true;
+    return response({ items: [record] });
+  } });
+  const facets = { 'stari-psa': 'senior' };
+  for (const [page, next_page, candidates_checked] of [[2, 3, 1], [3, null, 1], [4, null, 0]]) {
+    const result = await client.browseProducts({ category_id: dogFoodId, facets, page });
+    assert.equal(result.page, page);
+    assert.equal(result.coverage, 'category_page');
+    assert.equal(result.next_page, next_page);
+    assert.equal(result.candidates_checked, candidates_checked);
+    assert.deepEqual(result.products, []);
+    assert.deepEqual(result.facets_applied, facets);
+  }
+  assert.deepEqual(calls.filter(call => call.paging).map(call => [call.paging, call.query]), [2, 3, 4].map(page => [
+    { page, limit: 10 }, { parameters: [{ alias: 'stari-psa', values: ['senior'] }] },
+  ]));
+  assert.deepEqual(calls.filter(call => call.ids), [{ ids: ['294-2'] }, { ids: ['294-3'] }]);
 });
 
 test('category browse rejects invalid inputs and unsupported markets before fetching', async () => {
   const calls = [];
   const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => { calls.push(url); } });
   for (const args of [
-    {}, { category_id: 'arbitrary-category' }, { category_id: dogFoodId, page: 2 },
+    {}, { category_id: 'arbitrary-category' },
+    ...[0, -1, 1.5, '2', Number.MAX_SAFE_INTEGER + 1].map(page => ({ category_id: dogFoodId, page })),
     { category_id: dogFoodId, facets: { 'stari-psa': 'unknown' } },
     { category_id: dogFoodId, facets: { 'stari-psa': ['senior'] } },
     { category_id: dogFoodId, facets: { unsupported: 'senior' } },

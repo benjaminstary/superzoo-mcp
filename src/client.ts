@@ -63,6 +63,7 @@ export const findStoresInput = z.strictObject({
 export const listProductCategoriesInput = z.strictObject({});
 const browseCategoryInput = z.strictObject({
   category_id: z.literal(DOG_FOOD.id).describe('Category ID from list_product_categories.'),
+  page: z.number().int().positive().default(1).describe('One-based page number. Use next_page with the same category and facets to continue.'),
 });
 export const browseProductsInputs = {
   CZ: browseCategoryInput.extend({
@@ -351,29 +352,30 @@ export class SuperzooClient {
     if (market.country === 'PL') {
       throw new SuperzooError('not_found', `Category browsing is not supported in ${market.name}`);
     }
-    const { category_id, facets = {} } = browseProductsInputs[market.country].parse(input);
+    const { category_id, facets = {}, page } = browseProductsInputs[market.country].parse(input);
     const { webId, facet } = DOG_FOOD.markets[market.country];
     const priceLevel = market.priceLevel;
     const source = `https://parameter-filter.superzoo.cz/filter-products/${webId}`;
     const [age] = Object.values(facets);
     const query = age === undefined ? {} : { parameters: [{ alias: facet, values: [age] }] };
     const post = { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' } } as const;
-    const { data: page, checked_at } = await this.policy.request({
+    const { data: filtered, checked_at } = await this.policy.request({
       market: market.country, operation: 'category_filter', url: source, schema: categoryPageSchema,
       init: { ...post, body: JSON.stringify({
         priceLevel, scope: { category: DOG_FOOD.scopeId },
         filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
         facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
-        query, paging: { page: 1, limit: CATEGORY_PAGE_SIZE },
+        query, paging: { page, limit: CATEGORY_PAGE_SIZE },
       }) },
       ...requestContext,
     });
-    const ids = page.products.map(product => product.id);
+    const ids = filtered.products.map(product => product.id);
     const result = {
       market: market.country, source, checked_at, category_id,
-      facets_applied: age === undefined ? {} : facets, coverage: 'first_page' as const,
-      upstream_total_count: page.totalCount, candidates_checked: ids.length,
-    };
+      facets_applied: age === undefined ? {} : facets, coverage: page === 1 ? 'first_page' : 'category_page',
+      page, next_page: page < Math.ceil(filtered.totalCount / CATEGORY_PAGE_SIZE) ? page + 1 : null,
+      upstream_total_count: filtered.totalCount, candidates_checked: ids.length,
+    } satisfies Omit<BrowseProductsResult, 'product_source' | 'eligible_count' | 'products'>;
     if (ids.length === 0) return { ...result, product_source: null, eligible_count: 0, products: [] };
 
     const product_source = `https://read-model.superzoo.cz/collections/product/webs/${webId}/languages/${market.language}/documents/filter`;

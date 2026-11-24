@@ -225,6 +225,8 @@ test('MCP publishes the verified Czech category and facet and omits category too
   const products = await client.callTool({ name: browse.name, arguments: { category_id, facets: { 'stari-psa': 'senior' } } });
   assert.equal(products.isError, undefined);
   assert.equal(products.structuredContent.coverage, 'first_page');
+  assert.equal(products.structuredContent.page, 1);
+  assert.equal(products.structuredContent.next_page, null);
   assert.deepEqual(products.structuredContent.products, []);
   assert.deepEqual(JSON.parse(products.content[0].text), products.structuredContent);
   assert.equal(calls.length, 1);
@@ -260,7 +262,7 @@ test('Slovak browsing advertises local facets and checks Slovak price eligibilit
   }
   assert.deepEqual(calls, []);
   const facets = { 'vek-psa': 'senior' };
-  const result = await client.callTool({ name: tool.name, arguments: { category_id, facets } });
+  const result = await client.callTool({ name: tool.name, arguments: { category_id, facets, page: 2 } });
   assert.equal(result.isError, undefined);
   assert.deepEqual(calls, [
     ['https://parameter-filter.superzoo.cz/filter-products/superzoo_sk', {
@@ -268,12 +270,15 @@ test('Slovak browsing advertises local facets and checks Slovak price eligibilit
       filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
       facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
       query: { parameters: [{ alias: 'vek-psa', values: ['senior'] }] },
-      paging: { page: 1, limit: 10 },
+      paging: { page: 2, limit: 10 },
     }],
     ['https://read-model.superzoo.cz/collections/product/webs/superzoo_sk/languages/sk/documents/filter', { ids }],
   ]);
   assert.equal(result.structuredContent.market, 'SK');
   assert.equal(result.structuredContent.upstream_total_count, 238);
+  assert.equal(result.structuredContent.coverage, 'category_page');
+  assert.equal(result.structuredContent.page, 2);
+  assert.equal(result.structuredContent.next_page, 3);
   assert.equal(result.structuredContent.eligible_count, 1);
   assert.deepEqual(result.structuredContent.facets_applied, facets);
   assert.deepEqual(result.structuredContent.products, [{ product_id: ids[0], name: 'Granuly', url: 'https://www.superzoo.sk/granuly/' }]);

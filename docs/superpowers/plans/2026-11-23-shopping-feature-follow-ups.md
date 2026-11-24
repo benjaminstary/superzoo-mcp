@@ -82,7 +82,11 @@
 
 - [x] Extend the same tools to Slovakia after verifying its category, facet, and local price eligibility. Both saved Slovak pages returned 10 eligible summaries in replay, with upstream totals of 924 unfiltered and 238 for `senior`. Both Czech replays, typecheck, 149 suite tests, and the installed-package smoke test passed. [Slovak evidence](../../investigation.md#slovak-dry-dog-food-category-filter--2026-11-23)
 
-**Current coverage:** Dry dog food in SK and CZ, one dog-age facet per market, and up to ten candidates from the first page. The tools support a shortlist. Broader category and facet coverage and paging are tracked in [Task 8](#task-8--verify-broader-category-browsing).
+**Shopper goal:** When a shopper asks for dry food for a puppy, adult dog, or senior dog, the assistant should apply that life stage without asking for the category ID or localized facet value.
+
+**Current coverage:** Dry dog food in SK and CZ, one dog-age facet per market, and up to ten candidates from the first page. All three stages returned matching products through MCP in both markets. Three independent shopper prompts verified natural-language selection for puppy, adult, and senior. Broader category and facet coverage and paging are tracked in [Task 8](#task-8--verify-broader-category-browsing). [Live filter evidence](../../investigation.md#live-dog-life-stage-filter-verification--2026-11-24) · [Agent evaluation](../../investigation.md#natural-language-dog-life-stage-selection)
+
+**Shopping flow check:** Passed for an SK puppy dry food request. A plain JavaScript MCP client used the existing tools to browse by life stage, compare three offers by published unit price, and quote delivery and pickup for two units of the lowest-priced sample. The client converted prices per 100 g to approximate prices per kg. [Live shopping evidence](../../investigation.md#live-shopping-flow--2026-11-24)
 
 ## Task 5 — Verify and expose manufacturer feeding tables
 
@@ -118,8 +122,9 @@
 
 ## Task 8 — Verify broader category browsing
 
-**Status:** Blocked on live filter access. A single-alias lookup resolved the Slovak cat litter scope after the earlier route batch returned HTTP 403. The first filter request for that scope returned HTTP 403. Additional category facets, combined filtering, and paging still need live verification. [Probe notes](../../investigation.md#broader-category-browsing--2026-11-23)
+**Status:** Dry dog food paging verified at the upstream filter in SK and CZ. Additional categories and combined facets remain open. The Slovak cat litter scope resolved, and its first filter request returned HTTP 403. [Probe notes](../../investigation.md#broader-category-browsing--2026-11-23)
 
 - [ ] Trace navigation-to-scope resolution for several additional categories and verify which facet keys and values each category exposes. Verify a representative combined filter where a category exposes multiple facets.
-- [ ] Verify a second page with the same category, filters, and sort. Check product ordering, overlap between pages, eligibility checks, and how the upstream API signals the final page.
-- [ ] Record the verified markets, categories, facet discovery behavior, and paging limits. Use that evidence to scope an implementation of broader browsing through the existing tools.
+- [x] Verify first, second, final, and past-final upstream pages for the puppy filter with the same dry dog food scope and default order in SK and CZ. [Paging evidence](../../investigation.md#dry-dog-food-pagination--2026-11-24)
+- [x] Add optional one-based `page` (default `1`) to `browse_products`. Keep ten upstream candidates per page and preserve `first_page` coverage for existing calls. Return `page` and nullable `next_page` based on the upstream total. Use the same eligibility checks for every page.
+- [x] Verify through the client and MCP entry point that page 2 preserves the requested facet, a page with zero eligible products can continue, and the final or past-final page ends continuation. Update README and Unreleased changelog.

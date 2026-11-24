@@ -7,10 +7,10 @@ Unreleased are merged but have not been included in a published release.
 
 ### Added
 
-- `list_product_categories` and `browse_products` expose the first page
-  of dry dog food in Slovakia and Czechia with a market-specific dog-age facet.
-  Browsing checks sale eligibility and reports upstream matches separately
-  from eligible products on the page.
+- `list_product_categories` and `browse_products` expose dry dog food in
+  Slovakia and Czechia with a market-specific dog-age facet. Browsing accepts
+  an optional page number, returns the next page when available, and reports
+  upstream matches separately from eligible products on the page.
 
 ### Changed
 

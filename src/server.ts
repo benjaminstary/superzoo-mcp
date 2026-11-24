@@ -83,8 +83,9 @@ export function createServer(client = new SuperzooClient()) {
       inputSchema: listProductCategoriesInput, outputSchema: listProductCategoriesResultSchema, annotations,
     }, handleTool((args: z.input<typeof listProductCategoriesInput>) => client.listProductCategories(args)));
     server.registerTool('browse_products', {
-      description: `Browse the first page of dry dog food in ${name}. Use list_product_categories for the category ID and facet values. `
-        + 'Accepts an optional dog-age facet. Checks up to ten candidates for publication and local public sale eligibility. '
+      description: `Browse one page of dry dog food in ${name}. Use list_product_categories for the category ID and facet values. `
+        + 'Accepts an optional dog-age facet and defaults to page 1. Pass next_page with the same category and facets to see more. '
+        + 'Checks up to ten candidates for publication and local public sale eligibility. '
         + 'The upstream total counts matches before those checks. Use get_product for full details.',
       inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,
     }, handleTool((args: z.input<typeof browseProductsInput>, context) => client.browseProducts(args, context)));

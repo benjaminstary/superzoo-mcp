@@ -111,7 +111,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
 | `get_delivery_options` (SK, CZ) | `product_id`, optional `quantity` (1 or 2, default 1) | Market-level shipping quote, including prices, dates, and pickup places supplied with each method |
 | `list_product_categories` (SK, CZ) | None | Supported category IDs, names, and allowed facet values |
-| `browse_products` (SK, CZ) | `category_id`, optional `facets` | First-page product summaries with sale eligibility checks and coverage counts |
+| `browse_products` (SK, CZ) | `category_id`, optional `facets` and `page` (default 1) | One page of eligible product summaries, coverage counts, and `next_page` |
 
 Example workflow:
 
@@ -141,7 +141,9 @@ browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: {
 | SK | Granuly pre psov | `vek-psa` | `dospely`, `senior`, `stena` |
 | CZ | Granule pro psy | `stari-psa` | `dospely`, `senior`, `stene` |
 
-`browse_products` checks up to ten first-page matches for publication, sale restrictions, and a public price-level record for the selected market. It returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
+`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
+
+To show more, pass the returned `next_page` as `page` with the same category and facets. A page can have zero eligible products and still return a `next_page`. A null `next_page` means the current upstream total is exhausted. Results reflect the catalog at each request, so products can move between pages as the catalog changes. `coverage` is `first_page` on page 1 and `category_page` on later pages.
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 

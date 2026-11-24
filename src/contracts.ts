@@ -15,6 +15,7 @@ const count = z.number().int().nonnegative();
 const provenance = { source: z.string(), market, checked_at: timestamp };
 
 const categoryId = browseProductsInputs.CZ.shape.category_id;
+const categoryPage = browseProductsInputs.CZ.shape.page.removeDefault();
 const categoryMarket = z.enum(['CZ', 'SK']);
 const czechCategoryFacets = browseProductsInputs.CZ.shape.facets.unwrap();
 const slovakCategoryFacets = browseProductsInputs.SK.shape.facets.unwrap();
@@ -38,7 +39,9 @@ export const browseProductsResultSchema = z.object({
   market: categoryMarket,
   category_id: categoryId,
   facets_applied: z.union([czechCategoryFacets, slovakCategoryFacets]),
-  coverage: z.literal('first_page'),
+  coverage: z.enum(['first_page', 'category_page']),
+  page: categoryPage.describe('Page returned, starting at 1.'),
+  next_page: categoryPage.nullable().describe('Next page for the same category and facets, or null when the upstream total is exhausted.'),
   upstream_total_count: count,
   candidates_checked: count,
   eligible_count: count,
