@@ -2,8 +2,9 @@ import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { browseProductsInputs } from './categories.js';
 import { SuperzooClient, searchInput, productInput, availabilityInput, findStoresInput, deliveryOptionsInput,
-  listProductCategoriesInput, browseProductsInputs } from './client.js';
+  listProductCategoriesInput } from './client.js';
 import { productResultSchema, availabilityResultSchema, searchResultSchema, findStoresResultSchema, deliveryOptionsResultSchema,
   comparisonResultSchema, commonStoresResultSchema, productBatchInput, commonStoresInput,
   listProductCategoriesResultSchema, browseProductsResultSchema } from './contracts.js';
@@ -83,8 +84,9 @@ export function createServer(client = new SuperzooClient()) {
       inputSchema: listProductCategoriesInput, outputSchema: listProductCategoriesResultSchema, annotations,
     }, handleTool((args: z.input<typeof listProductCategoriesInput>) => client.listProductCategories(args)));
     server.registerTool('browse_products', {
-      description: `Browse one page of dry dog food in ${name}. Use list_product_categories for the category ID and facet values. `
-        + 'Accepts an optional dog-age facet and defaults to page 1. Pass next_page with the same category and facets to see more. '
+      description: `Browse one page of a supported product category in ${name}. Use list_product_categories for the category ID and facet values. `
+        + 'Use optional facets listed for the selected category. Different facet keys must all match. Defaults to page 1. '
+        + 'Pass next_page with the same category and facets to see more. '
         + 'Checks up to ten candidates for publication and local public sale eligibility. '
         + 'The upstream total counts matches before those checks. Use get_product for full details.',
       inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,

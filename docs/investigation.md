@@ -337,6 +337,24 @@ An anonymous POST to `https://read-model.superzoo.cz/collections/route/webs/supe
 
 A follow-up used the app's single-alias lookup for `macky/podstielky` (cat litter). It returned HTTP 200. The exact route had category template `productCatalogue:category:CATEGORY` and scope `19291e00-26e0-464b-bd6a-b804296ffb14`, distinct from navigation ID `dfc861d8-9069-47db-b29b-5d6afee06f1f`. The first unfiltered page request to `https://parameter-filter.superzoo.cz/filter-products/superzoo_sk` used that scope, price level `22`, and a limit of ten. It returned HTTP 403. Both requests were anonymous, with a 12-second timeout, no redirects, and no retries. The run stopped at the filter response. Cat litter facets and products remain unverified.
 
+### Broader category browsing and combined facets — 2026-11-24
+
+Both markets returned HTTP 200 for navigation, separate single-alias route lookups, parameter-filter pages, and product joins. Each exact route resolved to `productCatalogue:category:CATEGORY`. Both markets returned the same navigation ID and filter scope for each category. The Slovak cat litter filter returned HTTP 200 on this date. Requests were anonymous, used a 12-second deadline, and followed no redirects.
+
+| Category | Navigation ID | Filter scope | Unfiltered total SK / CZ | Verified facet keys SK / CZ |
+| --- | --- | --- | --- | --- |
+| Wet dog food | `4a0f2a97-fe83-479e-b76d-65818f053d9b` | `57377452-e778-43d0-9853-870bd5116ad3` | 522 / 404 | `vek-psa` / `stari-psa` |
+| Dry cat food | `4716d036-9322-41aa-975a-7a32a0735f0b` | `927e5be1-9bd3-4d53-b710-af2966dd3958` | 357 / 322 | `vek-macky` / `stari-kocky` |
+| Cat litter | `dfc861d8-9069-47db-b29b-5d6afee06f1f` | `19291e00-26e0-464b-bd6a-b804296ffb14` | 79 / 76 | `typ-podstielky` / `typ-steliva` |
+
+Separate first-page requests verified each of the three life stages for wet dog food and dry cat food, all five litter types, and grain-free dry dog food in each market. Each returned total matched the advertised facet count. Every candidate joined to a published, eligible product with a market price record and carried the requested value. Sampled second pages preserved the same filtered totals and had no overlap with page 1.
+
+For dry dog food, `vek-psa=senior` plus `alergie-psa=bez-obilnin-grain-free` returned 66 matches in SK. In CZ, `stari-psa=senior` plus `alergie=bez-obilovin-grain-free-1` returned 70. Each market returned ten eligible products on each of the first two pages. All joined records carried both values, and the pages had no overlap. The same MCP tools now expose these categories and facets, using the existing paging and product eligibility rules.
+
+Slovak kitten dry food page 2 returned ten candidate IDs, but the product read model returned nine records. A separate request for the missing variant, `1753-127737`, also returned an empty result. Browsing now skips candidates with missing records and can return the next page based on the upstream total. Duplicate, unexpected, and malformed product records still produce an error.
+
+A plain JavaScript MCP client over stdio discovered all four categories in each market. It followed `next_page` for senior grain-free dry dog food, puppy wet food, kitten dry food, and clumping litter. All eight pairs of pages preserved the filters and had no overlapping IDs. The Polish server omitted both category tools. Typecheck, all 152 tests, the packed consumer install and MCP smoke test, and the npm pack dry run passed.
+
 ### Dry dog food pagination — 2026-11-24
 
 At 10:56 Bratislava time, four sequential anonymous requests per market used the existing dry dog food filter scope, the local puppy facet, and the default upstream order. Each changed only `paging.page` and kept `paging.limit` at 10. Requests used a 12-second deadline, blocked redirects, and omitted credentials. All returned HTTP 200.

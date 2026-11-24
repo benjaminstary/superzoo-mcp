@@ -211,11 +211,14 @@ test('MCP publishes the verified Czech category and facet and omits category too
   const result = await client.callTool({ name: list.name, arguments: {} });
   assert.equal(result.isError, undefined);
   assert.equal(result.structuredContent.market, 'CZ');
-  assert.deepEqual(result.structuredContent.categories, [{
+  assert.deepEqual(result.structuredContent.categories[0], {
     category_id: '42eeee01-5544-4e68-8130-bef9755298ae',
     name: 'Granule pro psy',
-    facets: [{ key: 'stari-psa', values: ['dospely', 'senior', 'stene'] }],
-  }]);
+    facets: [
+      { key: 'stari-psa', values: ['dospely', 'senior', 'stene'] },
+      { key: 'alergie', values: ['bez-obilovin-grain-free-1'] },
+    ],
+  });
   const { category_id } = result.structuredContent.categories[0];
   for (const [name, args] of [[list.name, { limit: 2 }], [browse.name, { category_id, facets: { 'stari-psa': 'unknown' } }]]) {
     const invalid = await client.callTool({ name, arguments: args });
@@ -250,18 +253,23 @@ test('Slovak browsing advertises local facets and checks Slovak price eligibilit
   const client = await connect(t, api);
   const { tools } = await client.listTools();
   const tool = tools.find(item => item.name === 'browse_products');
-  assert.deepEqual(Object.keys(tool.inputSchema.properties.facets.properties), ['vek-psa']);
+  assert.deepEqual(Object.keys(tool.inputSchema.properties.facets.properties).sort(),
+    ['alergie-psa', 'typ-podstielky', 'vek-macky', 'vek-psa']);
   const list = await client.callTool({ name: 'list_product_categories', arguments: {} });
-  assert.deepEqual(list.structuredContent, { market: 'SK', categories: [{
-    category_id, name: 'Granuly pre psov', facets: [{ key: 'vek-psa', values: ['dospely', 'senior', 'stena'] }],
-  }] });
-  for (const facets of [{ 'stari-psa': 'senior' }, { 'vek-psa': 'stene' }]) {
+  assert.equal(list.structuredContent.market, 'SK');
+  assert.deepEqual(list.structuredContent.categories[0], {
+    category_id, name: 'Granuly pre psov', facets: [
+      { key: 'vek-psa', values: ['dospely', 'senior', 'stena'] },
+      { key: 'alergie-psa', values: ['bez-obilnin-grain-free'] },
+    ],
+  });
+  for (const facets of [{ 'stari-psa': 'senior' }, { 'vek-psa': 'stene' }, { 'vek-macky': 'maciatko' }]) {
     const invalid = await client.callTool({ name: tool.name, arguments: { category_id, facets } });
     assert.equal(invalid.isError, true);
     await assert.rejects(() => api.browseProducts({ category_id, facets }), { name: 'ZodError' });
   }
   assert.deepEqual(calls, []);
-  const facets = { 'vek-psa': 'senior' };
+  const facets = { 'vek-psa': 'senior', 'alergie-psa': 'bez-obilnin-grain-free' };
   const result = await client.callTool({ name: tool.name, arguments: { category_id, facets, page: 2 } });
   assert.equal(result.isError, undefined);
   assert.deepEqual(calls, [
@@ -269,7 +277,10 @@ test('Slovak browsing advertises local facets and checks Slovak price eligibilit
       priceLevel: '22', scope: { category: 'c1955f56-7438-4c93-8875-9dc8f634acd9' },
       filters: { onlyOnSale: true, onlyInStock: false, promotedOnly: false },
       facets: ['brands', 'parameters', 'campaigns', 'categories', 'reviews', 'prices'],
-      query: { parameters: [{ alias: 'vek-psa', values: ['senior'] }] },
+      query: { parameters: [
+        { alias: 'vek-psa', values: ['senior'] },
+        { alias: 'alergie-psa', values: ['bez-obilnin-grain-free'] },
+      ] },
       paging: { page: 2, limit: 10 },
     }],
     ['https://read-model.superzoo.cz/collections/product/webs/superzoo_sk/languages/sk/documents/filter', { ids }],
@@ -282,4 +293,31 @@ test('Slovak browsing advertises local facets and checks Slovak price eligibilit
   assert.equal(result.structuredContent.eligible_count, 1);
   assert.deepEqual(result.structuredContent.facets_applied, facets);
   assert.deepEqual(result.structuredContent.products, [{ product_id: ids[0], name: 'Granuly', url: 'https://www.superzoo.sk/granuly/' }]);
+});
+
+test('MCP discovers additional categories and sends each filter to its resolved scope', async t => {
+  const calls = [];
+  const client = await connect(t, new SuperzooClient({ country: 'CZ', fetchImpl: async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return Response.json({ products: [], totalCount: 0 });
+  } }));
+  const list = await client.callTool({ name: 'list_product_categories', arguments: {} });
+  assert.equal(list.structuredContent.categories.length, 4);
+  for (const [name, scope, key, value] of [
+    ['Konzervy a kapsičky', '57377452-e778-43d0-9853-870bd5116ad3', 'stari-psa', 'stene'],
+    ['Granule pro kočky', '927e5be1-9bd3-4d53-b710-af2966dd3958', 'stari-kocky', 'kote'],
+    ['Stelivo pro kočky', '19291e00-26e0-464b-bd6a-b804296ffb14', 'typ-steliva', 'hrudkujici'],
+  ]) {
+    const { category_id, facets } = list.structuredContent.categories.find(category => category.name === name);
+    assert.ok(facets.find(facet => facet.key === key)?.values.includes(value));
+    const result = await client.callTool({
+      name: 'browse_products', arguments: { category_id, facets: { [key]: value } },
+    });
+    assert.equal(result.isError, undefined, JSON.stringify(result.content));
+    assert.equal(result.structuredContent.category_id, category_id);
+    assert.deepEqual(result.structuredContent.facets_applied, { [key]: value });
+    assert.equal(result.structuredContent.next_page, null);
+    assert.deepEqual(calls.at(-1).scope, { category: scope });
+    assert.deepEqual(calls.at(-1).query, { parameters: [{ alias: key, values: [value] }] });
+  }
 });

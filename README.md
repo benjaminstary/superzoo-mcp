@@ -134,14 +134,18 @@ browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: {
 browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: { "stari-psa": "senior" } }) // CZ
 ```
 
-`list_product_categories` returns the supported dry dog food category and its dog-age facet. Pass one value from your market or omit `facets` to browse without an age filter.
+`list_product_categories` returns the supported categories and their allowed facet keys and values for the server's market. Pass one value per facet key. Different keys must all match. Omit `facets` to browse the category without filters.
 
-| Market | Category | Dog-age facet | Values |
-| --- | --- | --- | --- |
-| SK | Granuly pre psov | `vek-psa` | `dospely`, `senior`, `stena` |
-| CZ | Granule pro psy | `stari-psa` | `dospely`, `senior`, `stene` |
+| Category | Available filters in SK and CZ |
+| --- | --- |
+| Dry dog food | Puppy, adult, or senior. Can combine life stage with grain-free. |
+| Wet dog food | Puppy, adult, or senior |
+| Dry cat food | Kitten, adult, or senior |
+| Cat litter | Clumping, odor control, coarse, fine, or for white cats |
 
-`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
+For a combined filter, Slovak dry dog food accepts `facets: { "vek-psa": "senior", "alergie-psa": "bez-obilnin-grain-free" }`. Use the market's discovery result for the category ID and exact facet values.
+
+`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It skips candidates with missing product records and returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
 
 To show more, pass the returned `next_page` as `page` with the same category and facets. A page can have zero eligible products and still return a `next_page`. A null `next_page` means the current upstream total is exhausted. Results reflect the catalog at each request, so products can move between pages as the catalog changes. `coverage` is `first_page` on page 1 and `category_page` on later pages.
 

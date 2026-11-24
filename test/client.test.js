@@ -850,16 +850,30 @@ test('category browse rejects invalid inputs and unsupported markets before fetc
   assert.deepEqual(calls, []);
 });
 
-test('category browse rejects incomplete, mismatched, duplicate, or malformed product records', async () => {
+test('category browse skips missing product records and preserves continuation', async () => {
+  const ids = ['missing', '294-170845'];
+  for (const items of [[], [categoryRecord(ids[1])]]) {
+    const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => response(
+      String(url) === categoryFilterUrl ? { products: ids.map(id => ({ id })), totalCount: 30 } : { items },
+    ) });
+    const result = await client.browseProducts({ category_id: dogFoodId, page: 2 });
+    assert.equal(result.next_page, 3);
+    assert.equal(result.candidates_checked, 2);
+    assert.equal(result.eligible_count, items.length);
+    assert.deepEqual(result.products.map(product => product.product_id), items.map(item => item.product.productId));
+  }
+});
+
+test('category browse rejects unexpected, duplicate, or malformed product records', async () => {
   const id = '294-170845';
   const missingRestriction = categoryRecord(id);
   delete missingRestriction.product.productSaleForbidden;
   const malformedRestriction = categoryRecord(id);
   malformedRestriction.product.disallowedPriceLevels = [1];
-  for (const items of [[], [categoryRecord('wrong-id')], [categoryRecord(id), categoryRecord(id)],
+  for (const items of [[categoryRecord('wrong-id')], [categoryRecord(id), categoryRecord(id)],
     [missingRestriction], [malformedRestriction]]) {
     const client = new SuperzooClient({ country: 'CZ', fetchImpl: async url => response(
-      String(url) === categoryFilterUrl ? { products: [{ id }], totalCount: 1 } : { items },
+      String(url) === categoryFilterUrl ? { products: [{ id }, { id: 'another-id' }], totalCount: 2 } : { items },
     ) });
     await assert.rejects(() => client.browseProducts({ category_id: dogFoodId }), { code: 'invalid_response' });
   }

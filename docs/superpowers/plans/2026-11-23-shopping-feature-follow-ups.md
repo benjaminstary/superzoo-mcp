@@ -122,9 +122,10 @@
 
 ## Task 8 — Verify broader category browsing
 
-**Status:** Dry dog food paging verified at the upstream filter in SK and CZ. Additional categories and combined facets remain open. The Slovak cat litter scope resolved, and its first filter request returned HTTP 403. [Probe notes](../../investigation.md#broader-category-browsing--2026-11-23)
+**Status:** Dry dog food, wet dog food, dry cat food, and cat litter are supported in SK and CZ. Dry dog food supports life stage and grain-free together. [Probe notes](../../investigation.md#broader-category-browsing-and-combined-facets--2026-11-24)
 
-- [ ] Trace navigation-to-scope resolution for several additional categories and verify which facet keys and values each category exposes. Verify a representative combined filter where a category exposes multiple facets.
+- [x] Trace navigation-to-scope resolution for several additional categories and verify which facet keys and values each category exposes. Verify a representative combined filter where a category exposes multiple facets.
 - [x] Verify first, second, final, and past-final upstream pages for the puppy filter with the same dry dog food scope and default order in SK and CZ. [Paging evidence](../../investigation.md#dry-dog-food-pagination--2026-11-24)
 - [x] Add optional one-based `page` (default `1`) to `browse_products`. Keep ten upstream candidates per page and preserve `first_page` coverage for existing calls. Return `page` and nullable `next_page` based on the upstream total. Use the same eligibility checks for every page.
 - [x] Verify through the client and MCP entry point that page 2 preserves the requested facet, a page with zero eligible products can continue, and the final or past-final page ends continuation. Update README and Unreleased changelog.
+- [x] Expose the verified categories and facet values through the existing tools. Apply all requested facet keys together and reject facets outside the selected category.
