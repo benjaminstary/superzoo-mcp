@@ -5,12 +5,28 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
 ### Added
 
+- Browse the Slovak and Czech catalogues across dogs, cats, small mammals,
+  birds, aquariums, and terrariums. Filter by category, keyword, or both, and
+  combine live catalogue facets with brand, price, stock, and sorting options.
+  The same tools handle life stages for pet food and dimensions for aquarium
+  decorations.
 - `browse_products` can filter a page for advertised sales, Family member
   prices, or both in Slovakia and Czechia. Deal matches include the public
   offer amount, original amount, price variant, and published unit price
   when available. The Super zoo storefront provides these details anonymously.
+
+### Changed
+
+- **Breaking:** `list_product_categories({})` returns category navigation.
+  Pass `category_id`, `query`, or both to discover the filters and valid values
+  for that scope.
+- `browse_products` verifies up to ten candidates per page. Follow `next_page`
+  when present, including after an empty page. Keyword browsing checks up to 200
+  upstream candidates.
 
 ## [0.4.0] - 2026-11-24
 
@@ -102,7 +118,8 @@ Unreleased are merged but have not been included in a published release.
 - Docker support, offline tests, live smoke checks, and npm publishing through
   stable GitHub releases.
 
-[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.4.0...master
+[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.5.0...master
+[0.5.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.2.0
