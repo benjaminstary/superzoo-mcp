@@ -4,6 +4,8 @@ An unofficial, read-only [Model Context Protocol](https://modelcontextprotocol.i
 
 Strict TypeScript compiled to JavaScript. Requires Node.js 22 or newer. [MIT licensed](LICENSE). This project is not affiliated with Super zoo or the Plaček Group.
 
+[View Superzoo MCP on Glama](https://glama.ai/mcp/servers/benjaminstary/superzoo-mcp)
+
 ## Quick start
 
 Clone this repository, then run:
