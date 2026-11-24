@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { browseProductsInputs, categoryIdSchema, categoryPageNumber } from './categories.js';
+import { browseProductsInputs, categoryIdSchema, categoryOffer, categoryPageNumber } from './categories.js';
 import { productInput, availabilityInput, findStoresInput, deliveryQuantitySchema } from './client.js';
 
 export type RequestContext = { signal?: AbortSignal };
@@ -31,22 +31,6 @@ export const listProductCategoriesResultSchema = z.object({
 });
 export type ListProductCategoriesResult = z.output<typeof listProductCategoriesResultSchema>;
 
-export const browseProductsResultSchema = z.object({
-  ...provenance,
-  market: categoryMarket,
-  category_id: categoryIdSchema,
-  facets_applied: z.union([czechCategoryFacets, slovakCategoryFacets]),
-  coverage: z.enum(['first_page', 'category_page']),
-  page: categoryPageNumber.describe('Page returned, starting at 1.'),
-  next_page: categoryPageNumber.nullable().describe('Next page for the same category and facets, or null when the upstream total is exhausted.'),
-  upstream_total_count: count,
-  candidates_checked: count,
-  eligible_count: count,
-  product_source: z.string().nullable(),
-  products: z.array(z.object({ product_id: productId, name: nonBlankText, url: z.url() })),
-});
-export type BrowseProductsResult = z.output<typeof browseProductsResultSchema>;
-
 export const toolErrorSchema = z.object({
   code: z.enum(['not_found', 'rate_limited', 'upstream_unavailable', 'invalid_response',
     'timeout', 'cancelled', 'overloaded', 'internal_error']),
@@ -71,7 +55,34 @@ const price = z.object({
   // These upstream fields are opaque today; preserve them without claiming a shape.
   sale_percentage: z.unknown(),
   voucher_campaign: z.unknown(),
-}).nullable();
+});
+
+export const browseProductsResultSchema = z.object({
+  ...provenance,
+  market: categoryMarket,
+  category_id: categoryIdSchema,
+  facets_applied: z.union([czechCategoryFacets, slovakCategoryFacets]),
+  coverage: z.enum(['first_page', 'category_page']),
+  page: categoryPageNumber.describe('Page returned, starting at 1.'),
+  next_page: categoryPageNumber.nullable()
+    .describe('Next candidate page with the same category, facets, and offer filter, or null when the upstream total is exhausted.'),
+  upstream_total_count: count.describe('Catalogue matches before eligibility and offer checks.'),
+  candidates_checked: count,
+  eligible_count: count.describe('Products on this page passing catalogue eligibility before offer checks.'),
+  product_source: z.string().nullable(),
+  offer_filter: z.object({
+    mode: categoryOffer,
+    details_checked: count,
+    detail_failures: count,
+  }).optional(),
+  products: z.array(z.object({
+    product_id: productId, name: nonBlankText, url: z.url(),
+    price: price.optional(),
+    price_checked_at: timestamp.optional(),
+  })),
+});
+export type BrowseProductsResult = z.output<typeof browseProductsResultSchema>;
+
 const availability = z.object({
   availableStoresCount: count.nullable().optional(),
   storeAvailability: z.object({ text: upstreamText, availability: upstreamText }).nullable().optional(),
@@ -90,7 +101,7 @@ export const productResultSchema = z.object({
   can_buy: z.boolean().nullable(),
   rating: z.object({ value: z.number().nonnegative(), count }).nullable(),
   attributes: z.array(z.object({ name: nonBlankText, value: nonBlankText })),
-  price,
+  price: price.nullable(),
   variants: z.array(z.object({
     variantName: z.string(),
     variants: z.array(z.object({

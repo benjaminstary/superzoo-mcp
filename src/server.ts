@@ -86,9 +86,11 @@ export function createServer(client = new SuperzooClient()) {
     server.registerTool('browse_products', {
       description: `Browse one page of a supported product category in ${name}. Use list_product_categories for the category ID and facet values. `
         + 'Use optional facets listed for the selected category. Different facet keys must all match. Defaults to page 1. '
-        + 'Pass next_page with the same category and facets to see more. '
+        + 'Use offer to find advertised sales, Family member prices, or both. Offer filtering checks the current page and includes published pack and unit prices when supplied. '
+        + 'Family prices require membership. The published unit price may reflect the regular price. '
+        + 'Pass next_page with the same category, facets, and offer filter, including after an empty offer page. '
         + 'Checks up to ten candidates for publication and local public sale eligibility. '
-        + 'The upstream total counts matches before those checks. Use get_product for full details.',
+        + 'The upstream total counts matches before eligibility and offer checks. Use get_product for full details.',
       inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,
     }, handleTool((args: z.input<typeof browseProductsInput>, context) => client.browseProducts(args, context)));
   }

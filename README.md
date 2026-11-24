@@ -111,7 +111,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | `find_stores` (SK, CZ) | `latitude` and `longitude`, both required in decimal degrees | Up to one nearby branch selected by Super zoo, with its ID, address, and reported branch coordinates |
 | `get_delivery_options` (SK, CZ) | `product_id`, optional `quantity` (1 or 2, default 1) | Market-level shipping quote, including prices, dates, and pickup places supplied with each method |
 | `list_product_categories` (SK, CZ) | None | Supported category IDs, names, and allowed facet values |
-| `browse_products` (SK, CZ) | `category_id`, optional `facets` and `page` (default 1) | One page of eligible product summaries, coverage counts, and `next_page` |
+| `browse_products` (SK, CZ) | `category_id`, optional `facets`, `offer`, and `page` (default 1) | One catalogue page with optional deal filtering, coverage counts, and `next_page` |
 
 Example workflow:
 
@@ -145,7 +145,19 @@ browse_products({ category_id: "42eeee01-5544-4e68-8130-bef9755298ae", facets: {
 
 For a combined filter, Slovak dry dog food accepts `facets: { "vek-psa": "senior", "alergie-psa": "bez-obilnin-grain-free" }`. Use the market's discovery result for the category ID and exact facet values.
 
-`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It skips candidates with missing product records and returns eligible product IDs, names, and links in filter order. `upstream_total_count` counts all upstream matches before these checks. `candidates_checked` and `eligible_count` describe the returned page. Use `get_product` to retrieve price amounts and availability.
+`browse_products` checks up to ten candidates per page for publication, sale restrictions, and a public price-level record for the selected market. It skips candidates with missing product records and returns eligible product IDs, names, and links in catalogue order. `upstream_total_count` counts all catalogue matches. `candidates_checked` and `eligible_count` describe the page before optional offer filtering. Use `get_product` for full product details and availability.
+
+Set `offer: "sale"` for advertised general sales, `offer: "family"` for Family member prices, or `offer: "deals"` for both. You can combine it with any supported category facets. The MCP checks eligible products on the current page against the public product details. Each match includes the advertised price, published original price, offer variant, and price check time. Family prices require membership. Published unit prices can reflect the regular price during an offer. Compare equivalent units and keep the offer label with the price.
+
+Continue with `next_page` and the same category, facets, and offer filter, even when the page has zero deals. `offer_filter.detail_failures` counts product details the MCP could not verify. The upstream total and page order come from the catalogue, so the results cover the pages you check.
+
+```js
+browse_products({
+  category_id: "42eeee01-5544-4e68-8130-bef9755298ae",
+  facets: { "vek-psa": "dospely", "alergie-psa": "bez-obilnin-grain-free" },
+  offer: "deals",
+}) // SK
+```
 
 To show more, pass the returned `next_page` as `page` with the same category and facets. A page can have zero eligible products and still return a `next_page`. A null `next_page` means the current upstream total is exhausted. Results reflect the catalog at each request, so products can move between pages as the catalog changes. `coverage` is `first_page` on page 1 and `category_page` on later pages.
 

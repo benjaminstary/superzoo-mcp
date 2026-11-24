@@ -428,6 +428,18 @@ Four sequential GET requests used `www.superzoo.sk` and `www.superzoo.cz`, with 
 
 The table has one axis headed `Váha psa v dospelosti` in SK and `Váha psa v dospělosti` in CZ, with 12 weight labels from `5 kg` to `90 kg`. Each `values` row references its weight label by column ID. Both markets returned a default labelled `75 g`, and the `5 kg`, `10 kg`, and `90 kg` rows carried numeric `dailyDosage` values of `75`, `120`, and `630`. Individual rows carry no dosage unit field. The response has no echoed variant ID, manufacturer, or attribution for the table. The request path supplies the variant ID, and the saved brand ID identifies the product brand. Manufacturer authorship and row-level unit semantics remain unverified. This leaves the manufacturer feeding table tool blocked. Raw captures remain local.
 
+### Public deal verification — 2026-11-24
+
+Anonymous requests used the dry dog food category with adult and grain-free facets in SK and CZ. Turning on `promotedOnly` produced the same first page and total as the baseline in each market (157 SK, 168 CZ). Regular-price entries remained in both results. The flag cannot serve as a deals filter for this request.
+
+The public detail endpoint returned `sale` for advertised general discounts in SK and `familyPrice` and `topPriceFamilySale` for discounted Family offers in both markets. For example, SK variant `0814-512200` returned EUR 21.59 against EUR 26.99 with `sale`. Variant `294-170771` returned EUR 7.69 against EUR 8.39 with `familyPrice`. Both unit-price fields were identical on these offers, so the published unit price cannot establish the discounted cost per kg.
+
+The pack and unit sort requests changed catalogue order over two pages. The sampled order tracked the catalogue price-level record, which can differ from the advertised offer. For example, SK variant `294-172210` had a catalogue comparison price of EUR 63.69 and an advertised Family offer of EUR 57.90. Some CZ candidates had missing price details. Global deal ranking requires evidence that catalogue sorting tracks the public offer and comparable unit prices across pages.
+
+The deal filter therefore checks the public detail for each eligible candidate on the requested catalogue page. It matches recognized variants only when the published offer amount is lower than the published original amount. The result retains Family membership context, published unit amounts, and the existing catalogue continuation.
+
+A plain JavaScript MCP client discovered the adult and grain-free facets and requested two deal pages over stdio in each market. Slovakia returned four offers on page 1 and three on page 2. Czechia returned one and two, respectively. Each page started with ten eligible candidates and had zero failed detail checks. In Slovakia, the first page included variant `0814-512200` at EUR 21.59 with `sale`. In Czechia, the first page included variant `94-11374` at CZK 789 with `familyPrice`.
+
 ## APK feature release smoke — 2026-11-23
 
 The live check called the two new MCP tools in SK and CZ with one sequential anonymous request per market and tool. Requests had a 12-second deadline, zero upstream retries, and redirect following disabled. The locator used public city-center coordinates. Delivery used one unit of public variant `294-101115`. Results validated against the published MCP success schemas.

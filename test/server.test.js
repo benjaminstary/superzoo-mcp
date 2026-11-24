@@ -235,6 +235,78 @@ test('MCP publishes the verified Czech category and facet and omits category too
   assert.equal(calls.length, 1);
 });
 
+test('MCP browses advertised sales and Family deals while preserving candidate paging', async t => {
+  const category_id = '42eeee01-5544-4e68-8130-bef9755298ae';
+  const offers = {
+    regular: { variant: 'default', sellPrice: '5' },
+    sale: { variant: 'sale', sellPrice: '9', originalPrice: '10' },
+    family: { variant: 'familyPrice', sellPrice: '7', originalPrice: '8' },
+    'family-sale': { variant: 'topPriceFamilySale', sellPrice: '6', originalPrice: '8' },
+    'equal-price': { variant: 'sale', sellPrice: '5', originalPrice: '5' },
+    unknown: { variant: 'voucher', sellPrice: '5', originalPrice: '10' },
+  };
+  const ids = [...Object.keys(offers), 'missing', 'restricted'];
+  const details = [];
+  const bodies = [];
+  const api = new SuperzooClient({ country: 'SK', logRequests: false, fetchImpl: async (url, options) => {
+    const path = String(url);
+    if (path.includes('parameter-filter')) {
+      const body = JSON.parse(options.body);
+      bodies.push(body);
+      return Response.json({ products: (body.paging.page === 1 ? ids : ['regular']).map(id => ({ id })), totalCount: 22 });
+    }
+    if (path.includes('read-model')) {
+      return Response.json({ items: JSON.parse(options.body).ids.map(id => ({
+        product: { productId: id, name: id, alias: id, published: true,
+          productSaleForbidden: id === 'restricted', disallowedPriceLevels: [] },
+        prices: [{ productId: id, webId: 'superzoo_sk', priceLevelId: '22' }],
+      })) });
+    }
+    const id = path.split('/').at(-1);
+    details.push(id);
+    if (id === 'missing') return new Response('', { status: 404 });
+    return Response.json({ product: { id, name: id, alias: id }, price: {
+      ...offers[id], sellUnitPrice: { unitPrice: '0.5', unitSize: '100', unit: 'g' },
+    } });
+  } });
+  const client = await connect(t, api);
+  const { tools } = await client.listTools();
+  const browse = tools.find(tool => tool.name === 'browse_products');
+  assert.deepEqual(browse.inputSchema.properties.offer.enum, ['deals', 'sale', 'family']);
+  const facets = { 'vek-psa': 'dospely', 'alergie-psa': 'bez-obilnin-grain-free' };
+  const call = (offer, page) => client.callTool({ name: browse.name, arguments: { category_id, facets, offer, page } });
+  assert.equal((await call('personal_coupon')).isError, true);
+  assert.deepEqual(bodies, []);
+  for (const [mode, expected] of [['deals', ['sale', 'family', 'family-sale']], ['sale', ['sale']], ['family', ['family', 'family-sale']]]) {
+    const result = await call(mode);
+    assert.equal(result.isError, undefined);
+    const data = result.structuredContent;
+    assert.deepEqual(data.products.map(product => product.product_id), expected);
+    assert.deepEqual(data.offer_filter, { mode, details_checked: 7, detail_failures: 1 });
+    assert.equal(data.eligible_count, 7);
+    assert.equal(data.upstream_total_count, 22);
+    assert.equal(data.next_page, 2);
+    assert.deepEqual(JSON.parse(result.content[0].text), data);
+    if (mode === 'deals') {
+      const family = data.products[1];
+      assert.equal(family.price.variant, 'familyPrice');
+      assert.equal(family.price.amount, '7');
+      assert.equal(family.price.original_amount, '8');
+      assert.deepEqual(family.price.unit_price, { amount: '0.5', unit_size: '100', unit: 'g' });
+      assert.ok(Date.parse(family.price_checked_at));
+    }
+  }
+  const next = (await call('deals', 2)).structuredContent;
+  assert.deepEqual(next.products, []);
+  assert.deepEqual(next.offer_filter, { mode: 'deals', details_checked: 1, detail_failures: 0 });
+  assert.equal(next.next_page, 3);
+  assert.ok(!details.includes('restricted'));
+  assert.deepEqual(bodies.at(-1).query.parameters, [
+    { alias: 'vek-psa', values: ['dospely'] },
+    { alias: 'alergie-psa', values: ['bez-obilnin-grain-free'] },
+  ]);
+});
+
 test('Slovak browsing advertises local facets and checks Slovak price eligibility', async t => {
   const category_id = '42eeee01-5544-4e68-8130-bef9755298ae';
   const ids = ['294-170845', 'restricted', 'wrong-web'];

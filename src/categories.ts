@@ -40,13 +40,16 @@ export const categories = {
 export const categoryIds = Object.keys(categories) as (keyof typeof categories)[];
 export const categoryIdSchema = z.enum(categoryIds).describe('Category ID from list_product_categories.');
 export const categoryPageNumber = z.number().int().positive();
+export const categoryOffer = z.enum(['deals', 'sale', 'family']);
 
 function browseInput(market: keyof typeof categoryMarkets) {
   const facetShape = Object.fromEntries(Object.values(categories).flatMap(category =>
     Object.entries(category[market].facets).map(([key, values]) => [key, z.enum(values).optional()] as const)));
   return z.strictObject({
     category_id: categoryIdSchema,
-    page: categoryPageNumber.default(1).describe('One-based page number. Use next_page with the same category and facets to continue.'),
+    page: categoryPageNumber.default(1).describe('One-based page number. Use next_page with the same category, facets, and offer filter to continue.'),
+    offer: categoryOffer.optional()
+      .describe('Filter the current page to verified public discounts: sale for general sales, family for Family member prices, or deals for both.'),
     facets: z.strictObject(facetShape).optional()
       .describe('Use facet keys and values listed for this category by list_product_categories. Different keys must all match.'),
   }).refine(

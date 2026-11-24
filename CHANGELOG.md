@@ -5,6 +5,13 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+### Added
+
+- `browse_products` can filter a page for advertised sales, Family member
+  prices, or both in Slovakia and Czechia. Deal matches include the public
+  offer amount, original amount, price variant, and published unit price
+  when available. The Super zoo storefront provides these details anonymously.
+
 ## [0.4.0] - 2026-11-24
 
 ### Added

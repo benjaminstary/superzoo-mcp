@@ -333,7 +333,7 @@ export class SuperzooClient {
     if (market.country === 'PL') {
       throw new SuperzooError('not_found', `Category browsing is not supported in ${market.name}`);
     }
-    const { category_id, facets = {}, page } = browseProductsInputs[market.country].parse(input);
+    const { category_id, facets = {}, page, offer } = browseProductsInputs[market.country].parse(input);
     const webId = categoryMarkets[market.country];
     const priceLevel = market.priceLevel;
     const source = `https://parameter-filter.superzoo.cz/filter-products/${webId}`;
@@ -357,6 +357,7 @@ export class SuperzooClient {
       facets_applied: Object.fromEntries(facetEntries), coverage: page === 1 ? 'first_page' : 'category_page',
       page, next_page: page < Math.ceil(filtered.totalCount / CATEGORY_PAGE_SIZE) ? page + 1 : null,
       upstream_total_count: filtered.totalCount, candidates_checked: ids.length,
+      ...(offer === undefined ? {} : { offer_filter: { mode: offer, details_checked: 0, detail_failures: 0 } }),
     } satisfies Omit<BrowseProductsResult, 'product_source' | 'eligible_count' | 'products'>;
     if (ids.length === 0) return { ...result, product_source: null, eligible_count: 0, products: [] };
 
@@ -377,7 +378,32 @@ export class SuperzooClient {
           !prices.some(price => price.productId === id && price.webId === webId && price.priceLevelId === priceLevel)) return [];
       return [{ product_id: id, name: product.name, url: link(market, product.alias) }];
     });
-    return { ...result, product_source, eligible_count: products.length, products };
+    const eligible = { ...result, product_source, eligible_count: products.length };
+    if (offer === undefined) return { ...eligible, products };
+
+    // The shared request policy caps concurrency and caches public product details.
+    const details = await Promise.allSettled(products.map(({ product_id }) => this.getProduct({ product_id }, requestContext)));
+    if (requestContext.signal?.aborted) throw new SuperzooError('cancelled', 'Superzoo request cancelled');
+    let detail_failures = 0;
+    const matches = details.flatMap((detail, index) => {
+      if (detail.status === 'rejected') {
+        if (detail.reason instanceof SuperzooError && detail.reason.code === 'cancelled') throw detail.reason;
+        detail_failures++;
+        return [];
+      }
+      const { price, checked_at: price_checked_at } = detail.value;
+      if (price?.amount == null || price.original_amount === null ||
+          compareDecimals(price.amount, price.original_amount) >= 0) return [];
+      const isSale = price.variant === 'sale';
+      const isFamily = price.variant === 'familyPrice' || price.variant === 'topPriceFamilySale';
+      if (!(isSale && offer !== 'family') && !(isFamily && offer !== 'sale')) return [];
+      return [{ ...products[index]!, price, price_checked_at }];
+    });
+    return {
+      ...eligible,
+      offer_filter: { mode: offer, details_checked: details.length, detail_failures },
+      products: matches,
+    };
   }
 
   async getProductAvailability(input: z.input<typeof availabilityInput>, requestContext: RequestContext = {}): Promise<AvailabilityResult> {

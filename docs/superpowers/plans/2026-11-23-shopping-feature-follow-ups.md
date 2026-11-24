@@ -129,3 +129,11 @@
 - [x] Add optional one-based `page` (default `1`) to `browse_products`. Keep ten upstream candidates per page and preserve `first_page` coverage for existing calls. Return `page` and nullable `next_page` based on the upstream total. Use the same eligibility checks for every page.
 - [x] Verify through the client and MCP entry point that page 2 preserves the requested facet, a page with zero eligible products can continue, and the final or past-final page ends continuation. Update README and Unreleased changelog.
 - [x] Expose the verified categories and facet values through the existing tools. Apply all requested facet keys together and reject facets outside the selected category.
+
+## Task 9 — Find advertised deals while browsing
+
+**Shopper goal:** Combine a supported category and its facets with advertised general sales or Family prices. The public product details supply the prices anonymously.
+
+- [x] Check the catalogue promotion flag and price sorting across two pages in SK and CZ. Compare the returned candidates with public product details. [Probe notes](../../investigation.md#public-deal-verification--2026-11-24)
+- [x] Add optional `offer: "deals" | "sale" | "family"` to `browse_products`. Use existing category eligibility checks and validate each offer against the published original price. Return the published price data, offer variant, and price timestamp.
+- [x] Preserve catalogue paging and expose detail check counts. Verify that empty matching pages can continue and that restricted products are excluded before checking offers.
