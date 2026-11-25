@@ -99,13 +99,13 @@
 - [ ] Add offline tests for source values, absent table, identity mismatch where echoed, missing attribution or units, and discovery by market. Run `npm run build && node --test test/client.test.js test/contracts.test.js test/server.test.js` and confirm the new tests fail.
 - [ ] Implement the tool through the shared client and request policy. Return published guidance without extrapolating quantities. Rerun the focused tests and typecheck. Update the README and Unreleased changelog.
 
-## Task 6 — Verify and expose exact barcode lookup
+## Task 6 — Backlog: Verify and expose exact barcode lookup
 
-**Status:** Blocked on anonymous access. The saved APK trace identifies the product read-model filter used by the scanner. The earlier anonymous exact EAN probe returned HTTP 403, and this review found no alternate route for an exact lookup. [Investigation notes](../../investigation.md#exact-barcode-lookup-verification)
+**Status:** Backlog. The APK scanner's catalog request returned HTTP 403 in the anonymous probe. Super zoo publicly lists EANs and documents EAN search. The first check when this task resumes is whether the existing anonymous product search finds a known EAN in SK and CZ. Confirm an exact match in product detail before returning a variant. [Investigation notes](../../investigation.md#exact-barcode-lookup-verification) · [Super zoo app FAQ](https://www.superzoo.cz/nova-mobilni-aplikace-super-zoo/)
 
 **Files:** `docs/investigation.md`, this plan, and the shared client, contract, server, test, and user-facing files if verified.
 
-- [ ] Find a supported anonymous lookup route. The prior exact EAN probe returned HTTP 403. If no supported route is established, record the blocker and stop this task.
+- [ ] Query the existing anonymous product search with a known EAN such as `8594031442844`, which the SK and CZ storefronts publish for variant `294-101115`. Verify returned candidates against their product details. If this search yields no verified route, record the result and leave implementation in the backlog.
 - [ ] Verify lookup of an EAN from an existing product detail response. Confirm the result resolves the same variant with exact EAN equality. Verify no-match behavior with a valid unmatched test barcode. Document supported barcode lengths and market coverage.
 - [ ] Define `lookup_product_by_ean({ ean })` for verified markets. Accept a digit string of a verified length with a valid EAN check digit. Return the existing product result for one exact, eligible variant. Use `not_found` for zero exact matches and `invalid_response` for multiple distinct exact variants.
 - [ ] Add offline tests for leading-zero input, invalid checksums, nearby matches, duplicate variant IDs, distinct exact variants, exclusions, and market discovery. Run the focused client, contract, and server tests and confirm the new assertions fail.
