@@ -5,6 +5,20 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-25
+
+### Added
+
+- A verified restock walkthrough for Slovakia and Czechia. It shows how to
+  match exact pack sizes, check pickup timing for multiple products at the same
+  branch, and request a delivery quote for two units of one variant.
+
+### Changed
+
+- MCP tool descriptions explain how to discover scoped brand and attribute
+  filters, label Family member prices, and compare prices within the checked
+  results using matching units. Tool inputs and outputs remain compatible.
+
 ## [0.5.0] - 2026-11-24
 
 ### Added
@@ -118,7 +132,8 @@ Unreleased are merged but have not been included in a published release.
 - Docker support, offline tests, live smoke checks, and npm publishing through
   stable GitHub releases.
 
-[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.5.0...master
+[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.5.1...master
+[0.5.1]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.4.0
 [0.3.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.3.0
