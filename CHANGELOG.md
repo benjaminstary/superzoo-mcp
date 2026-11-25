@@ -5,6 +5,21 @@ Unreleased are merged but have not been included in a published release.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-25
+
+### Added
+
+- Product prices expose `price.requires_membership` to identify Super zoo
+  Family member prices. Unknown price variants leave this field `null`.
+- Delivery quotes include `address_checked: false` to indicate that no
+  delivery address or postal code was checked.
+- Added maintainer metadata for the Glama listing.
+
+### Changed
+
+- Product lookup, browsing, and comparison tools guide MCP clients to show
+  product links and confirmed pack sizes in shopping answers.
+
 ## [0.5.1] - 2026-11-25
 
 ### Added
@@ -132,7 +147,8 @@ Unreleased are merged but have not been included in a published release.
 - Docker support, offline tests, live smoke checks, and npm publishing through
   stable GitHub releases.
 
-[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.5.1...master
+[Unreleased]: https://github.com/benjaminstary/superzoo-mcp/compare/v0.5.2...master
+[0.5.2]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.2
 [0.5.1]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.1
 [0.5.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/benjaminstary/superzoo-mcp/releases/tag/v0.4.0
