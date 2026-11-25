@@ -23,13 +23,14 @@ const client = new SuperzooClient({ fetchImpl: async url => response(
 
 test('delivery result schema preserves the verified quantity and rejects invalid quantities', () => {
   const result = { market: 'SK', source: 'https://logistics.superzoo.cz', checked_at: checkedAt,
-    product_id: productId, delivery_methods: [], pickup_methods: [] };
+    product_id: productId, address_checked: false, delivery_methods: [], pickup_methods: [] };
   for (const quantity of [1, 2]) {
     assert.deepEqual(deliveryOptionsResultSchema.parse({ ...result, quantity }), { ...result, quantity });
   }
   for (const quantity of [undefined, 0, 1.5, '2', 3]) {
     assert.equal(deliveryOptionsResultSchema.safeParse({ ...result, quantity }).success, false);
   }
+  assert.equal(deliveryOptionsResultSchema.safeParse({ ...result, quantity: 1, address_checked: true }).success, false);
 });
 
 // Rejecting existing payloads, dropping opaque upstream fields, or coercing prices breaks compatibility.

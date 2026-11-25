@@ -51,6 +51,7 @@ const price = z.object({
   currency: z.enum(['EUR', 'CZK', 'PLN']),
   context: z.literal('public_online'),
   variant: nullableText,
+  requires_membership: z.boolean().nullable().describe('Whether this price requires Super zoo Family membership. Null means unknown.'),
   original_amount: decimal,
   lowest_amount: decimal,
   unit_price: unitPrice,
@@ -162,6 +163,7 @@ export const deliveryOptionsResultSchema = z.object({
   market: market.exclude(['PL']),
   product_id: productId,
   quantity: deliveryQuantitySchema,
+  address_checked: z.literal(false).describe('The quote used no delivery address or postal code.'),
   delivery_methods: z.array(z.object({
     ...quotedMethod,
     is_price_from: z.boolean().nullable(),

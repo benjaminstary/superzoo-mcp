@@ -16,7 +16,8 @@ const product = product_id => ({
   source: `${market.web}/web-api/products/${product_id}`, market: 'SK', checked_at: oldTime,
   product_id, name: 'Food', url: `${market.web}/food/`, ean: null, catalogue_number: null,
   brand: null, can_buy: null, rating: null, attributes: [], price: {
-    amount: '13.99', currency: 'EUR', context: 'public_online', variant: 'family',
+    amount: '13.99', currency: 'EUR', context: 'public_online', variant: 'familyPrice',
+    requires_membership: true,
     original_amount: '15.99', lowest_amount: null, sale_percentage: null, voucher_campaign: null,
     unit_price: null, original_unit_price: null,
   }, variants: [], availability: null,

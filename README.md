@@ -106,7 +106,7 @@ The server does not load `.env` automatically. Bounded request diagnostics (mark
 | Tool | Arguments | Returns |
 | --- | --- | --- |
 | `search_products` | `query`, optional `limit` (default 10, max 50), `brand`, `min_price`, `max_price`, `online_only` | Product IDs, links, price offers, variants, and availability summaries |
-| `get_product` | `product_id` | Product identity, brand, EAN, variants, rating, localized attributes, price offer, delivery and available-store count |
+| `get_product` | `product_id` | Product identity, link, brand, EAN, variants, rating, localized attributes, price offer, delivery and available-store count |
 | `get_product_availability` | `product_id`, optional `city` | Store names, addresses, links, opening hours, stock status and pickup text |
 | `compare_products` | `product_ids` (1–10 unique variant IDs) | Input-ordered products with per-product errors and original fetch timestamps |
 | `find_common_stores` | `product_ids` (1–10 unique variant IDs), optional `city` | Stores grouped by stable ID, every requested product's observation, and `all_in_stock` |
@@ -142,7 +142,7 @@ Set `SUPERZOO_COUNTRY` for the market, then ask your MCP client:
 
 1. Use `search_products` to find candidates, then `get_product` to confirm the formula and active pack. The 1 kg, 3 kg, 12 kg, and 12+2 kg offers are distinct. Ask for the pack size when the request is ambiguous. Confirm each item independently.
 2. Use `get_product_availability` for one item or `find_common_stores` for both. For a shared pickup, check both observations under the same `store_id`. Report each item's `pickup_text` alongside the branch link and observation time. In the live replay, `available` included pickup within an hour and `inStock` included Monday pickup. A false `all_in_stock` can still accompany a pickup option for both items. Report same-day pickup only when every item has status `available` or `inStock` and pickup timing that explicitly fits today. Missing observations, unknown statuses, and failed lookups leave pickup unconfirmed.
-3. Show the online pack price and label any Family price with its membership requirement. If the exact weight is confirmed, divide the applicable pack price by its weight in kg for an effective unit price. For delivery, use `get_delivery_options` with the confirmed food variant and `quantity: 2`. Report the method, any “from” fee, and quoted date when supplied. The quote covers one variant at market level.
+3. Show the product link, confirmed pack size, and online pack price. Label Family member prices using `price.requires_membership`. If the exact weight is confirmed, divide the applicable pack price by its weight in kg for an effective unit price. For delivery, use `get_delivery_options` with the confirmed food variant and `quantity: 2`. Report the method, any “from” fee, and date as a market-level quote.
 
 [Live restock replay](docs/investigation.md#exact-product-restock-replay--2026-11-25)
 
@@ -155,6 +155,8 @@ The Slovak and Czech tools cover dogs, cats, small mammals, birds, aquariums, an
 3. In `browse_products`, pass IDs from `filters.brands` in the top-level `brands` array and the exact keys and values from `filters.parameters` in `facets`. For a brand family, select the matching IDs by their displayed names.
 
 Use `search_products` for product-name lookup. Its optional `brand` matches an exact brand name after case and accent normalization.
+
+Link each recommended product using its returned `url` from `search_products`, `get_product`, or `browse_products`. Successful `compare_products` entries include the link at `product.url`. Show the confirmed pack size alongside the link when available.
 
 ```js
 // Example using the Slovak aquarium decoration category and length facet.
@@ -184,13 +186,13 @@ For price comparisons, use `get_product` or `compare_products` to confirm public
 
 Use `get_product_availability` for stock. The saved Slovak evidence confirms that the locator and stock API use the same ID for Bratislava Central (`SKPIC-520`). Broader ID equivalence and caller distance remain unverified. [Store locator evidence](docs/investigation.md#anonymous-store-locator--2026-11-23)
 
-`get_delivery_options` quotes shipping without a postal code for one variant-specific product ID. Pass `quantity: 2` to quote two units. The default is one unit. Results include `market`, `source`, `checked_at`, `product_id`, `quantity`, `delivery_methods`, and `pickup_methods`. Each method includes `method_id`, the localized `name`, nullable `price`, and nullable `delivery_date`. Prices include VAT and keep the upstream decimal string and currency. `is_price_from` preserves the home-delivery price qualifier. Dates retain their original offsets.
+`get_delivery_options` quotes shipping for one variant-specific product ID. Pass `quantity: 2` to quote two units. The default is one unit. Results include `market`, `source`, `checked_at`, `product_id`, `quantity`, `address_checked: false`, `delivery_methods`, and `pickup_methods`. The quote uses the market without an address or postal code. Each method includes `method_id`, the localized `name`, nullable `price`, and nullable `delivery_date`. Prices include VAT and keep the upstream decimal string and currency. `is_price_from` preserves the home-delivery price qualifier. Dates retain their original offsets.
 
-Pickup methods preserve the upstream grouping, which can include express delivery. Each includes `is_store` and the supplied `places`, with each place's ID, name, availability flag, date, and any extra fee. Unknown values are `null`. Empty arrays mean the quote supplied no entries for that group. The quote covers the selected market. Address-specific availability, checkout totals, and delivery commitments remain outside its coverage. [Shipping quote evidence](docs/investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23)
+Pickup methods preserve the upstream grouping, which can include express delivery. Each includes `is_store` and the supplied `places`, with each place's ID, name, availability flag, date, and any extra fee. Report availability and dates for the places they describe. Unknown values are `null`. Empty arrays mean the quote supplied no entries for that group. Wolt availability and timing for a specific location require location-specific evidence. [Shipping quote evidence](docs/investigation.md#anonymous-product-shipping-quotes-and-pickup--2026-11-23)
 
 Brand matching is exact after case/accent normalization. Price bounds are inclusive nonnegative decimal strings; reversed ranges are rejected. Filters combine with AND. `online_only: true` requires explicit delivery status `available`; absent, unknown, or unavailable statuses are omitted. `can_buy` and branch stock do not establish delivery availability. `online_only: false` adds no delivery filter.
 
-Price filters use the returned offer amount, including conditional `familyPrice` offers. Check `price.variant` before relying on a match.
+Price filters use the returned offer amount, including Family member prices. Check `price.requires_membership` and `price.variant` for the offer's conditions.
 
 Product details, enriched search results, and successful comparison entries include `rating` and `attributes`. The rating is either `null` or `{ value, count }`. The value uses the upstream scale, whose maximum is unverified. Attributes are localized `{ name, value }` pairs in upstream order. An empty list means no valid pairs were supplied.
 
@@ -202,8 +204,8 @@ Every tool publishes a success output schema and returns the same data as JSON t
 
 ## Prices, stock, and limits
 
-- Prices come from anonymous online lookups in the market's currency. Decimal amounts remain strings. `price.context` is `public_online`; `price.variant` preserves the upstream offer label. **A `familyPrice` offer can appear without login and may require membership.** It is not proof of your eligibility or a physical-store price. `original_amount` and `lowest_amount` preserve upstream reference prices when present.
-- A present `price` includes `unit_price` and `original_unit_price`, each `null` when unavailable. A supplied unit price has `amount`, `unit_size`, and `unit` strings. For example, `{ amount: "2.83", unit_size: "100", unit: "g" }` means 2.83 in the offer currency per 100 g. `unit_price` inherits the current offer's eligibility context.
+- Prices come from anonymous online lookups in the market's currency. Decimal amounts remain strings. `price.context` is `public_online`, and `price.variant` preserves the upstream offer label. `price.requires_membership` is `true` for `familyPrice` and `topPriceFamilySale`, `false` for `default` and `sale`, and `null` when the variant is missing or unrecognized. Shopper eligibility and branch prices are unverified. `original_amount` and `lowest_amount` preserve upstream reference prices when present.
+- A present `price` includes `unit_price` and `original_unit_price`, each `null` when unavailable. A supplied unit price has `amount`, `unit_size`, and `unit` strings. For example, `{ amount: "2.83", unit_size: "100", unit: "g" }` means 2.83 in the offer currency per 100 g. For a confirmed pack weight, calculate the effective unit price from the applicable pack price.
 - Stock is a status, not an exact quantity. `quantity` is always `null`; missing stock status becomes `unknown`. Stock status and `pickup_text` stay separate: an in-stock product may only be ready tomorrow.
 - Single-product, availability, and search results include `market`, `source`, and an ISO `checked_at` timestamp. Batch results include `market` and a completion `checked_at`; nested products and store observations retain their own retrieval timestamps. Successful validated details cache for 60 seconds and raw stock for 15 seconds, in one 256-entry in-memory LRU cache per client. Cache hits retain the original `checked_at`; expired data and failures are never served from cache. Prices and stock can change afterward; these tools never reserve products.
 - City filtering matches store names and addresses locally, ignoring case and accents. It does not measure distance or establish municipal boundaries. Pickup text remains in the shop's language.

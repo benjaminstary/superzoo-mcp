@@ -30,6 +30,21 @@ test('product preserves decimal price context, variant IDs, and availability sep
   assert.ok(Date.parse(result.checked_at));
 });
 
+test('product preserves offer variants and reports the known Family membership requirement', async () => {
+  for (const [variant, expected] of [
+    ['familyPrice', true], ['topPriceFamilySale', true], ['sale', false], ['default', false],
+    ['voucher', null], [undefined, null],
+  ]) {
+    const client = clientWith(async () => response({ ...detail, price: { ...detail.price, variant } }));
+    const result = await client.getProduct({ product_id: detail.product.id });
+    assert.equal(result.price.variant, variant ?? null);
+    assert.equal(result.price.requires_membership, expected, variant ?? 'missing variant');
+  }
+  const client = clientWith(async () => response({ ...detail, price: null }));
+  const result = await client.getProduct({ product_id: detail.product.id });
+  assert.equal(result.price, null);
+});
+
 test('product exposes localized details and upstream unit prices in the offer currency', async () => {
   const client = new SuperzooClient({ country: 'PL', fetchImpl: async () => response({
     ...detail, ...enrichment, price: { ...detail.price, ...enrichment.price, sellPrice: '84.99' },
@@ -181,7 +196,7 @@ test('delivery quote sends one unit anonymously and preserves prices, dates and 
   const { checked_at, ...result } = await client.getDeliveryOptions(quoteInput);
   assert.ok(Number.isFinite(Date.parse(checked_at)));
   assert.deepEqual(result, {
-    ...quoteInput, quantity: 1, market: 'SK', source,
+    ...quoteInput, quantity: 1, market: 'SK', source, address_checked: false,
     delivery_methods: [{ method_id: 'eed7a79d-1dc4-430f-bccd-ca291c8caaef',
       name: 'Packeta – Doručenie na adresu', price: { amount: '3.99', currency: 'EUR' },
       delivery_date: deliveryDate, is_price_from: false }],
@@ -245,6 +260,7 @@ test('delivery quote keeps unknown optional fields nullable and preserves explic
 
 test('delivery quote distinguishes empty options from malformed, mismatched, and unavailable responses', async () => {
   const empty = await clientWith(async () => response(shippingQuote())).getDeliveryOptions(quoteInput);
+  assert.equal(empty.address_checked, false);
   assert.deepEqual(empty.delivery_methods, []);
   assert.deepEqual(empty.pickup_methods, []);
   for (const payload of [

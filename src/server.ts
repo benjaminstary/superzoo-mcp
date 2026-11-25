@@ -28,6 +28,8 @@ export function createServer(client = new SuperzooClient()) {
   const { name, currency } = client.market;
   const server = new McpServer({ name: 'superzoo-mcp', version });
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+  const productLink = 'Link recommended products using the returned product page URL and show the confirmed pack size when known. ';
+  const membershipPrice = 'Label prices with requires_membership: true as Family member prices. Null means the membership requirement is unknown. ';
   server.registerTool('search_products', {
     description: `Look up Superzoo products by name or keyword in ${name}, with public online ${currency} offers and availability summaries. `
       + (client.market.country === 'PL' ? '' : 'For shopping by category, brand and product attributes, discover filters with list_product_categories and apply them with browse_products. ')
@@ -35,13 +37,15 @@ export function createServer(client = new SuperzooClient()) {
       + 'Optional brand and inclusive decimal price filters apply within this bounded window; omitted candidates may contain matches. '
       + 'online_only requires explicit delivery availability. Conditional offers remain conditional. '
       + 'Enriched products include ratings, localized attributes, and unit prices when supplied. '
+      + productLink + membershipPrice
       + 'Partial detail failures are marked on each product. Use variant-specific product IDs for stock lookups.',
     inputSchema: searchInput, outputSchema: searchResultSchema, annotations,
   }, handleTool((args: z.input<typeof searchInput>, context) => client.searchProducts(args, context)));
   server.registerTool('get_product', {
     description: `Get product details, variants, public online ${currency} offers in ${name}, delivery availability and available-store count. `
       + 'Includes localized attributes, ratings on the upstream scale, and unit prices when supplied. '
-      + 'Price variant identifies conditional offers such as familyPrice; membership eligibility and branch prices are not verified.',
+      + productLink + membershipPrice
+      + 'Online offers preserve the original price variant. Shopper eligibility and branch prices are unverified.',
     inputSchema: productInput, outputSchema: productResultSchema, annotations,
   }, handleTool((args: z.input<typeof productInput>, context) => client.getProduct(args, context)));
   server.registerTool('get_product_availability', {
@@ -52,7 +56,8 @@ export function createServer(client = new SuperzooClient()) {
   server.registerTool('compare_products', {
     description: `Compare one to ten unique product variants in ${name}, preserving input order and conditional ${currency} offers. `
       + 'Includes ratings on the upstream scale, localized attributes, and unit prices when supplied. '
-      + 'State the scope when ranking prices. Label Family member prices and compare unit prices on the same unit and quantity. '
+      + productLink + membershipPrice
+      + 'State the scope when ranking prices. Compare unit prices on the same unit and quantity. '
       + 'Partial failures remain explicit. Product checked_at values retain their original retrieval times.',
     inputSchema: productBatchInput, outputSchema: comparisonResultSchema, annotations,
   }, handleTool((args: z.input<typeof productBatchInput>, context) => compareProducts(client, args, context)));
@@ -74,7 +79,8 @@ export function createServer(client = new SuperzooClient()) {
     server.registerTool('get_delivery_options', {
       description: `Quote delivery for one or two units of a product variant in ${name}. Defaults to one unit. `
         + 'Returns market-level prices and dates plus pickup places supplied with each method. '
-        + 'The quote has no address-specific availability or delivery commitment.',
+        + 'With address_checked: false, present delivery prices and dates as market-level quotes. Wolt availability and timing for a specific location require location-specific evidence. '
+        + 'Report each pickup place using its own availability and date when supplied.',
       inputSchema: deliveryOptionsInput, outputSchema: deliveryOptionsResultSchema, annotations,
     }, handleTool((args: z.input<typeof deliveryOptionsInput>, context) => client.getDeliveryOptions(args, context)));
   }
@@ -92,7 +98,8 @@ export function createServer(client = new SuperzooClient()) {
         + 'Different parameter keys must all match. Multiple choices for one key are alternatives. '
         + 'Catalogue prices and sorting can differ from public offers. Use get_product to confirm current prices and get_product_availability for branch stock. '
         + 'Use offer to find advertised sales, Family member prices, or both. Offer filtering checks the current page and includes published pack and unit prices when supplied. '
-        + 'Label Family prices as member-only. The published unit price may reflect the regular price. '
+        + productLink + membershipPrice
+        + 'Both familyPrice and topPriceFamilySale identify Family member prices. Use the returned amount as quoted. The published unit price may reflect the regular price. '
         + 'Pass next_page with the same inputs, including after an empty page. Keyword coverage is bounded to 200 upstream candidates. '
         + 'Checks up to ten candidates for publication and local public sale eligibility. '
         + 'The upstream total counts matches before eligibility and offer checks. Report price rankings within the checked results when coverage is incomplete.',

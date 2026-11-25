@@ -197,9 +197,23 @@ const publicUnitPrice = (price: z.output<typeof unitPriceSchema>) => price ? {
   unit_size: price.unitSize,
   unit: price.unit,
 } : null;
+function requiresMembership(variant: string | null | undefined): boolean | null {
+  switch (variant) {
+    case 'familyPrice':
+    case 'topPriceFamilySale':
+      return true;
+    case 'default':
+    case 'sale':
+      return false;
+    default:
+      return null;
+  }
+}
+
 const publicPrice = (market: Market, price: z.output<typeof priceSchema>) => price ? {
   amount: price.sellPrice ?? null,
   currency: market.currency, context: 'public_online' as const, variant: price.variant ?? null,
+  requires_membership: requiresMembership(price.variant),
   original_amount: price.originalPrice ?? null,
   lowest_amount: price.calculatedLowestPrice ?? null,
   unit_price: publicUnitPrice(price.sellUnitPrice),
@@ -550,7 +564,7 @@ export class SuperzooClient {
       if (price?.amount == null || price.original_amount === null ||
           compareDecimals(price.amount, price.original_amount) >= 0) return [];
       const isSale = price.variant === 'sale';
-      const isFamily = price.variant === 'familyPrice' || price.variant === 'topPriceFamilySale';
+      const isFamily = price.requires_membership === true;
       if (!(isSale && offer !== 'family') && !(isFamily && offer !== 'sale')) return [];
       return [{ ...products[index]!, price, price_checked_at }];
     });
@@ -624,6 +638,7 @@ export class SuperzooClient {
     const { deliveryMethods, personalPickups } = data.shippingOptions;
     return {
       market: market.country, source: DELIVERY_QUOTE, checked_at, product_id, quantity,
+      address_checked: false,
       delivery_methods: deliveryMethods.map(method => ({
         method_id: method.deliveryMethodId, name: method.name, price: publicQuotePrice(market, method.price),
         delivery_date: method.deliveryDate ?? null, is_price_from: method.isPriceFrom ?? null,

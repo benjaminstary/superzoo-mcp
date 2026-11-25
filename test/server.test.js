@@ -24,6 +24,7 @@ test('MCP exposes nine read-only tools in Slovakia, validates input and returns 
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint && !tool.annotations.destructiveHint));
   const result = await client.callTool({ name: 'get_product', arguments: { product_id: '294-101115' } });
   assert.equal(result.structuredContent.price.amount, '13.99');
+  assert.equal(result.structuredContent.url, 'https://www.superzoo.sk/brit-care-salmon-oil-250ml/');
   assert.equal(JSON.parse(result.content[0].text).product_id, '294-101115');
   const bad = await client.callTool({ name: 'search_products', arguments: { query: 'x', limit: 51 } });
   assert.equal(bad.isError, true);
@@ -117,6 +118,7 @@ test('MCP advertises optional quantity for Czech delivery quotes and returns it 
   assert.deepEqual(calls, [{ webId: 'superzoo_cz', product }]);
   assert.equal(result.structuredContent.market, 'CZ');
   assert.equal(result.structuredContent.quantity, 2);
+  assert.equal(result.structuredContent.address_checked, false);
   assert.deepEqual(result.structuredContent.delivery_methods[0].price, { amount: '99', currency: 'CZK' });
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
   const defaultQuote = await client.callTool({ name: tool.name, arguments: args });
@@ -154,27 +156,37 @@ test('aggregate tools preserve partial successes in declared output schemas', as
     assert.equal(data.products[1].error.code, 'not_found');
     assert.deepEqual(JSON.parse(result.content[0].text), data);
     if (name === 'find_common_stores') assert.ok(data.stores.every(store => !store.all_in_stock));
+    if (name === 'compare_products') {
+      assert.equal(data.products[0].product.url, 'https://www.superzoo.sk/brit-care-salmon-oil-250ml/');
+      assert.equal(data.products[0].product.price.requires_membership, false);
+      assert.equal(data.products[1].product, null);
+    }
     const invalid = await client.callTool({ name, arguments: { product_ids: ['294-101115', '294-101115'] } });
     assert.equal(invalid.isError, true);
   }
 });
 
-test('MCP validates cross-field price ranges before invoking search and publishes bounded partial search results', async t => {
+test('MCP validates cross-field price ranges before invoking search and publishes linked search results', async t => {
   let calls = 0;
   const search = JSON.parse(readFileSync(new URL('./fixtures/filtered-search.json', import.meta.url)));
   const client = await connect(t, new SuperzooClient({ fetchImpl: async url => {
     calls++;
-    return String(url).includes('full-text-search') ? new Response(JSON.stringify(search)) : new Response('', { status: 404 });
+    if (String(url).includes('full-text-search')) return Response.json(search);
+    if (String(url).endsWith('/294-101115')) return Response.json(detail);
+    return new Response('', { status: 404 });
   } }));
   const bad = await client.callTool({ name: 'search_products', arguments: { query: 'brit', min_price: '10', max_price: '9' } });
   assert.equal(bad.isError, true);
   assert.match(bad.content[0].text, /Maximum price/);
   assert.equal(calls, 0);
-  const result = await client.callTool({ name: 'search_products', arguments: { query: 'brit', limit: 1 } });
+  const result = await client.callTool({ name: 'search_products', arguments: { query: 'brit', limit: 2 } });
   const data = searchResultSchema.parse(result.structuredContent);
   assert.equal(data.coverage, 'bounded_candidates');
   assert.equal(data.detail_failures, 1);
-  assert.equal(data.products[0].price, null);
+  assert.equal(data.products[0].url, 'https://www.superzoo.sk/brit-care-salmon-oil-250ml/');
+  assert.equal(data.products[0].price.requires_membership, false);
+  assert.equal(data.products[1].url, 'https://www.superzoo.sk/brit-care-salmon-oil-500-ml/');
+  assert.equal(data.products[1].price, null);
 });
 
 test('MCP preserves stable error codes and hides unexpected exception details', async t => {
@@ -286,6 +298,8 @@ test('MCP browses advertised sales and Family deals while preserving candidate p
     assert.deepEqual(JSON.parse(result.content[0].text), data);
     if (mode === 'deals') {
       const family = data.products[1];
+      assert.deepEqual(data.products.map(product => product.price.requires_membership), [false, true, true]);
+      assert.equal(family.url, 'https://www.superzoo.sk/family/');
       assert.equal(family.price.variant, 'familyPrice');
       assert.equal(family.price.amount, '7');
       assert.equal(family.price.original_amount, '8');
