@@ -502,3 +502,45 @@ Live evidence came from the earlier [one-unit quotes](#anonymous-product-shippin
 ## Catalogue-wide filter discovery — 2026-11-24
 
 See the [filter investigation](catalogue-filter-investigation.md) and [inventory](catalogue-filter-inventory.jsonl) for APK request fields, live parameter values, category coverage across all six animal departments, and the Polish verification gap.
+
+## Exact-product restock replay — 2026-11-25
+
+An anonymous plain JavaScript MCP SDK client ran the built server over stdio in SK and CZ. It used `search_products` with a limit of 10, confirmed variants and prices with `get_product`, fetched city stock, joined both products by branch ID with `find_common_stores`, and requested `get_delivery_options` for two units of the exact food variant. Successful responses matched their JSON text and `structuredContent`. The tables report observation times in Europe/Bratislava. Detail and stock cache hits retain their original timestamps.
+
+### Shopper evidence
+
+- A Slovak discussion asks which pet store offers the best value. One shopper checks Heureka and follows discounts across shops. [Modrý koník](https://www.modrykonik.sk/forum/chov-a-starostlivost/najlepsi-obchod-pre-chovatelske-potreby/)
+- A Czech discussion includes a shopper who nearly ran out of kibble after expecting next-day delivery. The older indexed excerpt informed the pickup scenario. [eMimino](https://www.emimino.cz/diskuse/psi-granule-189853/strankovani/7/)
+- Both Heureka pages already compare seller prices and shipping fees for the exact 12 kg pack. The MCP scenario tests a different shopping decision: which Super zoo branch can supply the exact packs together today. These sources inform scenario design. Demand and repeat use remain unmeasured. [Heureka SK](https://granule-pre-psov.heureka.sk/brit-care-hypoallergenic-adult-medium-breed-lamb-12-kg/) · [Heureka CZ](https://granule-psy.heureka.cz/brit-care-hypoallergenic-adult-medium-breed-lamb-12-kg/)
+
+### Product samples
+
+Prices and Family labels below matched the public product pages fetched during the replay session.
+
+| Market | Product and pack | Variant ID | Online price | Detail checked |
+| --- | --- | --- | --- | --- |
+| SK | [Brit Care Hypoallergenic Adult Medium Breed 12 kg](https://www.superzoo.sk/brit-care-granuly-dog-hypoallergenic-adult-medium-breed-12kg/) | `294-172216` | €57.29 | 13:31:45 |
+| SK | [Brit Care Hypoallergenic Adult Medium Breed 3 kg](https://www.superzoo.sk/brit-care-granuly-dog-hypoallergenic-adult-medium-breed-3kg/) | `294-172215` | €27.79 Family, €29.19 regular | 13:31:45 |
+| SK | [Cats Best Universal 10 l](https://www.superzoo.sk/kockolit-cats-best-universal-10l/) | `203-465` | €8.29 | 13:31:48 |
+| CZ | [Brit Care Hypoallergenic Adult Medium Breed 12 kg](https://www.superzoo.cz/brit-care-dog-hypoallergenic-adult-medium-breed-12kg/) | `294-172216` | Kč 1,169 | 13:30:51 |
+| CZ | [Brit Care Hypoallergenic Adult Medium Breed 3 kg](https://www.superzoo.cz/brit-care-dog-hypoallergenic-adult-medium-breed-3kg/) | `294-172215` | Kč 619 | 13:30:51 |
+| CZ | [Cats Best Original 10 l](https://www.superzoo.cz/kockolit-jrs-cats-best-original-10l/) | `203-168` | Kč 399 | 13:30:55 |
+| CZ | [ELBEVILLE Adult Mini Fresh Duck Healthy Digestion 4 kg](https://www.superzoo.cz/elbeville-adult-mini-fresh-duck-healthy-digestion-4kg/) | `94-11374` | Kč 789 Family, Kč 959 regular | 13:30:57 |
+
+The Slovak query for Cats Best Original 10 l returned Universal and Nature Gold products without an exact match in the returned candidates. The Slovak sample uses a separate request specifically for Universal. The Czech query returned the exact Original variant. A search miss leaves the requested variant unresolved.
+
+### Shopper decisions
+
+| Scenario | SK | CZ | Verification |
+| --- | --- | --- | --- | --- |
+| Pick up the exact 12 kg food pack today | “Kde v Bratislave dnes vyzdvihnem 12 kg Brit Care?” Bratislava Central returned `available`, “do hodiny,” at 13:31:49. | “Kde v Praze dnes vyzvednu 12 kg Brit Care?” Praha Horní Měcholupy returned `available`, “do 60 minut,” at 13:30:58. Černý Most returned `inStock`, “v pondělí.” | Passed in both markets. Named branch estimates matched the storefront. |
+| Collect food and litter in one trip | “Vyzdvihnem granuly aj Cats Best Universal 10 l na jednom mieste?” At 13:31:50, nine branches quoted “do hodiny” for both, including [Bratislava Central](https://www.superzoo.sk/bratislava-central/), using `SKPIC-520`. Polus had an explicit unavailable observation for the litter. | “Vyzvednu granule i Cats Best Original 10 l na jedné prodejně?” At 13:31:00, 14 branches quoted “do 60 minut” for both, including [Praha Horní Měcholupy](https://www.superzoo.cz/praha-horni-mecholupy/), using `CZPIC-253`. Podbaba had explicit unavailable observations for both. | Passed in both markets. One shared branch per market matched the storefront. |
+| Quote delivery for two of the 12 kg pack | “Koľko stojí doručenie dvoch balení?” The 13:31:50 quote returned DPD for €3.99, 30 November at 10:00 CET. | “Kolik stojí doručení dvou balení?” The 13:31:00 quote returned DPD and Balíkovna na adresu for Kč 99 each, 30 November at 12:00 CET. | Passed through the live quote tool in both markets. Checkout comparison remains open. |
+| Check membership and effective price per kg | “Je to cena pre člena a koľko stojí kilo?” The 3 kg pack's €27.79 Family price yields €9.26/kg. Its €29.19 regular price yields €9.73/kg. | “Je to cena pro člena a kolik stojí kilo?” The 4 kg ELBEVILLE's Kč 789 Family price yields Kč 197.25/kg. Its Kč 959 regular price yields Kč 239.75/kg. | Passed in both markets. Pack and Family pricing matched the storefront. |
+| Resolve an underspecified pack | “Potrebujem Brit Care Hypoallergenic Adult Medium Breed.” Search returned 1 kg, 3 kg, and 12 kg for that formula. Ask which pack. | “Potřebuji Brit Care Hypoallergenic Adult Medium Breed.” Search also returned a separate 12+2 kg variant. Ask which pack. | Passed in both markets. Search left multiple exact-formula packs for clarification. |
+
+The public store-availability panel showed “do 60 minút” for both Slovakia products at Bratislava Central at 13:36:15–17, equivalent to the MCP's “do hodiny.” The Czech panels showed “do 60 minut” for both products at Praha Horní Měcholupy at 13:36:21–25. These comparisons verify one shared pickup example per market. The counts above come from the MCP city results.
+
+Every joined branch had `all_in_stock: false` in both samples. The published field requires two explicit `inStock` values. The per-product observations support reporting the retailer's earlier pickup estimates at a shared branch. Keep the field's established meaning and use the detailed observations in the client recipe. Use `notAvailable` for explicit unavailability and surface missing observations or failed lookups as unknown. Same-day claims need pickup timing, and any branch result is an estimate for an individual product. The market-level two-unit quotes came from the shipping API and cover only one SKU. The storefront product pages present product-level delivery estimates, leaving independent two-unit checkout confirmation open.
+
+Existing fixtures exercise later pickup labels, null timing, conservative stock joins, failed and missing observations, conditional prices, and quote fee/date fields. The [README workflow](../README.md#restock-an-exact-pack-in-slovakia-or-czechia) uses the existing tools. `npm run build` and `npm test` passed, with 154 tests after allowing localhost for the HTTP transport suite.

@@ -133,6 +133,19 @@ find_stores({ latitude: 48.15, longitude: 17.11 }) // SK, near central Bratislav
 get_delivery_options({ product_id: "294-101115", quantity: 2 }) // SK or CZ
 ```
 
+### Restock an exact pack in Slovakia or Czechia
+
+Set `SUPERZOO_COUNTRY` for the market, then ask your MCP client:
+
+- **SK:** „Kde v Bratislave dnes vyzdvihnem Brit Care Dog Hypoallergenic Adult Medium Breed 12 kg aj Cats Best Universal 10 l? Ak sa granuly nedajú vyzdvihnúť dnes, koľko stojí doručenie dvoch balení?“
+- **CZ:** „Kde v Praze dnes vyzvednu Brit Care Dog Hypoallergenic Adult Medium Breed 12 kg i Cats Best Original 10 l? Pokud granule dnes nevyzvednu, kolik stojí doručení dvou balení?“
+
+1. Use `search_products` to find candidates, then `get_product` to confirm the formula and active pack. The 1 kg, 3 kg, 12 kg, and 12+2 kg offers are distinct. Ask for the pack size when the request is ambiguous. Confirm each item independently.
+2. Use `get_product_availability` for one item or `find_common_stores` for both. For a shared pickup, check both observations under the same `store_id`. Report each item's `pickup_text` alongside the branch link and observation time. In the live replay, `available` included pickup within an hour and `inStock` included Monday pickup. A false `all_in_stock` can still accompany a pickup option for both items. Report same-day pickup only when every item has status `available` or `inStock` and pickup timing that explicitly fits today. Missing observations, unknown statuses, and failed lookups leave pickup unconfirmed.
+3. Show the online pack price and label any Family price with its membership requirement. If the exact weight is confirmed, divide the applicable pack price by its weight in kg for an effective unit price. For delivery, use `get_delivery_options` with the confirmed food variant and `quantity: 2`. Report the method, any “from” fee, and quoted date when supplied. The quote covers one variant at market level.
+
+[Live restock replay](docs/investigation.md#exact-product-restock-replay--2026-11-25)
+
 ### Catalogue filters
 
 The Slovak and Czech tools cover dogs, cats, small mammals, birds, aquariums, and terrariums. For a shopping request with category, brand, or attribute requirements:
