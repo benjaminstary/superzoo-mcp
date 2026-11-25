@@ -135,7 +135,13 @@ get_delivery_options({ product_id: "294-101115", quantity: 2 }) // SK or CZ
 
 ### Catalogue filters
 
-The Slovak and Czech tools cover the storefront’s dogs, cats, small mammals, birds, aquarium, and terrarium navigation. Call `list_product_categories({})` for category IDs and departments. Pass `department` to narrow the list, or pass a category ID, a keyword query, or both to get the live `filters` for that scope.
+The Slovak and Czech tools cover dogs, cats, small mammals, birds, aquariums, and terrariums. For a shopping request with category, brand, or attribute requirements:
+
+1. Call `list_product_categories({})` for category IDs, or pass `department` to narrow the navigation.
+2. Call `list_product_categories({ category_id })` again for that category’s live filters and sorts. If you plan to browse with a keyword, pass the same `query` to discovery and browsing. A query alone also supports filter discovery.
+3. In `browse_products`, pass IDs from `filters.brands` in the top-level `brands` array and the exact keys and values from `filters.parameters` in `facets`. For a brand family, select the matching IDs by their displayed names.
+
+Use `search_products` for product-name lookup. Its optional `brand` matches an exact brand name after case and accent normalization.
 
 ```js
 // Example using the Slovak aquarium decoration category and length facet.
@@ -151,13 +157,15 @@ browse_products({
 
 Use the exact keys and values from the discovery result. A facet accepts one value, an array of acceptable values, or a numeric `{ from, to }` range in the catalogue’s units. Different facet keys must all match. Life-stage choices such as puppy, adult, and senior use this same syntax. Use `get_product` to confirm dimensions and attributes that the catalogue omits.
 
-Other inputs include `brands`, `subcategories`, `campaigns`, `tags`, and `ratings` from the same discovery result. The `only_in_stock` flag uses catalogue stock. Use `get_product_availability` for pickup at a specific branch. `catalogue_price` and price sorting use catalogue amounts in the market currency. Check `get_product` for the current public offer price. If the storefront labels are unavailable, discovery returns exact raw values and counts with `labels_available: false`.
+Other inputs include `subcategories`, `campaigns`, `tags`, and `ratings` from the same discovery result. The `only_in_stock` flag uses catalogue stock. Use `get_product_availability` for pickup at a specific branch. `catalogue_price` and price sorting use catalogue amounts in the market currency. Check `get_product` for the current public offer price. If the storefront labels are unavailable, discovery returns exact raw values and counts with `labels_available: false`.
 
 `browse_products` checks up to ten candidates per page for publication, local sale restrictions, and a public price-level record. It skips missing product records. `upstream_total_count` counts catalogue matches before eligibility and offer checks. Keyword browsing filters up to 200 upstream candidates and defaults to keyword order. `candidate_limit_reached` indicates that the search reported further candidates outside the verified window.
 
 Set `offer: "sale"` for general sales, `offer: "family"` for Family member prices, or `offer: "deals"` for both. Each match includes the public offer price, published original price, offer variant, and price check time. Family prices require membership. Published unit prices can reflect the regular price during an offer. `offer_filter.detail_failures` counts product details that could not be verified.
 
 Pass `next_page` as `page` with the same inputs, even when a page has no eligible products or deals. A null `next_page` means the current candidate total is exhausted. Catalogue changes between requests can move products between pages. Poland has keyword search via `search_products`. [Catalogue investigation](docs/catalogue-filter-investigation.md)
+
+For price comparisons, use `get_product` or `compare_products` to confirm public offer prices. Report the lowest pack price and the lowest price per comparable unit separately when both matter. Label Family offers as member-only. If coverage is incomplete, qualify the ranking as the lowest among the products checked. Use `unit_price_asc` only when the scope advertises it, and verify the unit and price basis before comparing published unit prices.
 
 `find_stores` accepts latitude from −90 to 90 and longitude from −180 to 180. It sends the coordinates to the selected Super zoo storefront. Results include `market`, `source`, `checked_at`, `coverage` set to `"nearest_store"`, and a `stores` array with at most one branch. Each branch has `store_id`, `name`, `address`, and reported branch coordinates. A missing or invalid branch coordinate is `null`. An explicit empty upstream result yields an empty array. Poland's locator route remains unverified.
 

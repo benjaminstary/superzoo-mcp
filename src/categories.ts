@@ -14,7 +14,7 @@ const priceRange = range.refine(({ from }) => from >= 0, { message: 'Catalogue p
 export const catalogueKeyword = z.string().trim().min(1).max(200);
 export const catalogueFacets = z.record(alias, z.union([value, z.array(value).min(1).max(100), range]))
   .refine(facets => Object.keys(facets).length <= 100, { message: 'Use at most 100 parameter filters' })
-  .describe('Use parameter keys and exact values from list_product_categories. Pass a string, alternative strings, or a numeric {from,to} range.');
+  .describe('Use keys and exact values from filters.parameters in scoped list_product_categories. Pass a string, alternative strings, or a numeric {from,to} range.');
 export const categoryIdSchema = catalogueId.describe('Navigation category ID from list_product_categories.');
 export const categoryPageNumber = z.number().int().positive();
 export const categoryOffer = z.enum(['deals', 'sale', 'family']);
@@ -31,7 +31,7 @@ export const listProductCategoriesInput = z.strictObject({
 });
 export const catalogueSelection = z.strictObject({
   facets: catalogueFacets.optional(),
-  brands: ids.optional(),
+  brands: ids.optional().describe('Brand IDs from filters.brands in scoped list_product_categories. Select IDs by their displayed names.'),
   subcategories: ids.optional().describe('Category facet IDs from scoped discovery.'),
   campaigns: ids.optional(),
   tags: ids.optional(),

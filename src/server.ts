@@ -29,7 +29,8 @@ export function createServer(client = new SuperzooClient()) {
   const server = new McpServer({ name: 'superzoo-mcp', version });
   const annotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
   server.registerTool('search_products', {
-    description: `Find Superzoo products in ${name}, with public online ${currency} offers and availability summaries. `
+    description: `Look up Superzoo products by name or keyword in ${name}, with public online ${currency} offers and availability summaries. `
+      + (client.market.country === 'PL' ? '' : 'For shopping by category, brand and product attributes, discover filters with list_product_categories and apply them with browse_products. ')
       + 'Default 10, max 50 results. Search checks up to 200 mixed candidates; upstream totals are not product counts. '
       + 'Optional brand and inclusive decimal price filters apply within this bounded window; omitted candidates may contain matches. '
       + 'online_only requires explicit delivery availability. Conditional offers remain conditional. '
@@ -50,7 +51,8 @@ export function createServer(client = new SuperzooClient()) {
   }, handleTool((args: z.input<typeof availabilityInput>, context) => client.getProductAvailability(args, context)));
   server.registerTool('compare_products', {
     description: `Compare one to ten unique product variants in ${name}, preserving input order and conditional ${currency} offers. `
-      + 'Includes ratings, localized attributes, and unit prices when supplied. '
+      + 'Includes ratings on the upstream scale, localized attributes, and unit prices when supplied. '
+      + 'State the scope when ranking prices. Label Family member prices and compare unit prices on the same unit and quantity. '
       + 'Partial failures remain explicit. Product checked_at values retain their original retrieval times.',
     inputSchema: productBatchInput, outputSchema: comparisonResultSchema, annotations,
   }, handleTool((args: z.input<typeof productBatchInput>, context) => compareProducts(client, args, context)));
@@ -78,20 +80,22 @@ export function createServer(client = new SuperzooClient()) {
   }
   if (client.market.country !== 'PL') {
     server.registerTool('list_product_categories', {
-      description: `List product categories and departments in ${name}. Pass category_id, a keyword query, or both to discover live filters and sorts. `
-        + 'Use the returned exact parameter keys and values, ID filters, and numeric ranges in browse_products. '
+      description: `Discover shopping categories and filters in ${name}. With no arguments or just department, list navigation and category IDs. `
+        + 'Call again with category_id to get filters and sorts for the chosen category. Include query here if the browse will also use it. '
+        + 'A query alone discovers filters for a keyword search. Read filters.brands for brand IDs and filters.parameters for exact attribute keys and values. '
         + 'Counts cover catalogue candidates before eligibility checks.',
       inputSchema: listProductCategoriesInput, outputSchema: listProductCategoriesResultSchema, annotations,
     }, handleTool((args: z.input<typeof listProductCategoriesInput>, context) => client.listProductCategories(args, context)));
     server.registerTool('browse_products', {
-      description: `Browse one catalogue page in ${name} by category_id, keyword query, or both. Use list_product_categories to discover filters for the same scope. `
+      description: `Find catalogue products in ${name} using category, brand and attribute filters. First call list_product_categories with the same category_id and/or query to discover filters. `
+        + 'Pass brand IDs in top-level brands and attribute keys and values in facets. Combine them in one request. '
         + 'Different parameter keys must all match. Multiple choices for one key are alternatives. '
         + 'Catalogue prices and sorting can differ from public offers. Use get_product to confirm current prices and get_product_availability for branch stock. '
         + 'Use offer to find advertised sales, Family member prices, or both. Offer filtering checks the current page and includes published pack and unit prices when supplied. '
-        + 'Family prices require membership. The published unit price may reflect the regular price. '
+        + 'Label Family prices as member-only. The published unit price may reflect the regular price. '
         + 'Pass next_page with the same inputs, including after an empty page. Keyword coverage is bounded to 200 upstream candidates. '
         + 'Checks up to ten candidates for publication and local public sale eligibility. '
-        + 'The upstream total counts matches before eligibility and offer checks. Use get_product for full details.',
+        + 'The upstream total counts matches before eligibility and offer checks. Report price rankings within the checked results when coverage is incomplete.',
       inputSchema: browseProductsInput, outputSchema: browseProductsResultSchema, annotations,
     }, handleTool((args: z.input<typeof browseProductsInput>, context) => client.browseProducts(args, context)));
   }
